@@ -24,12 +24,10 @@ const allowedDirectories = args.map(dir =>
       try {
         const stats = await fs.stat(dir);
         if (!stats.isDirectory()) {
-          console.error(`Error: ${dir} is not a directory`);
-          process.exit(1);
+          console.error(`Warning: ${dir} is not a directory; continuing without it`);
         }
       } catch (error) {
-        console.error(`Error accessing directory ${dir}:`, error);
-        process.exit(1);
+        console.error(`Warning: cannot access ${dir} (offline or invalid); continuing without it`);
       }
     }));
 

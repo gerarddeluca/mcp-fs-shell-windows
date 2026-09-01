@@ -1,6 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
-import { validatePath } from "../helpers/path.js";
+import { validatePath, ensureDirectoryExists } from "../helpers/path.js";
 
 export async function handleMoveFiles(
   items: Array<{source: string, destination: string}>,
@@ -25,30 +25,33 @@ export async function handleMoveFiles(
         }
         
         // Check if destination exists and handle based on overwrite flag
+        let destExists = true;
         try {
           await fs.access(validDestination);
+        } catch (error) {
+          const code = (error as NodeJS.ErrnoException).code;
+          if (code === 'ENOENT') {
+            destExists = false;
+          } else {
+            throw error;
+          }
+        }
+        if (destExists) {
           if (!overwrite) {
             throw new Error(`Destination already exists: ${item.destination}`);
           }
-          
-          // If overwrite is true and destination exists, remove the destination
-          // to avoid issues with fs.rename operation
+          // Remove existing destination so fs.rename can replace it
           const destStats = await fs.stat(validDestination);
           if (destStats.isDirectory()) {
             await fs.rm(validDestination, { recursive: true, force: true });
           } else {
             await fs.unlink(validDestination);
           }
-        } catch (error) {
-          // If the error is due to destination not existing, that's fine
-          if (!(error instanceof Error && error.message.includes("does not exist"))) {
-            throw error;
-          }
         }
         
         // Create parent directory for destination if it doesn't exist
         const destDir = path.dirname(validDestination);
-        await fs.mkdir(destDir, { recursive: true });
+        await ensureDirectoryExists(destDir);
         
         // Move the file
         await fs.rename(validSource, validDestination);

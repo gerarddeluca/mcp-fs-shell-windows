@@ -1,6 +1,6 @@
 import fs from "fs/promises";
 import {copyDir} from "./helpers.js";
-import {validatePath} from "../helpers/path.js";
+import {validatePath, ensureDirectoryExists} from "../helpers/path.js";
 
 export async function handleCopyFile(
   sourcePath: string,
@@ -35,7 +35,7 @@ export async function handleCopyFile(
       }
       
       // Create the destination directory if it doesn't exist
-      await fs.mkdir(validDestPath, { recursive: true });
+      await ensureDirectoryExists(validDestPath);
       
       // Copy directory recursively
       await copyDir(validSourcePath, validDestPath, allowedDirectories);

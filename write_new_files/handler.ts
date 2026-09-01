@@ -1,58 +1,68 @@
 import fs from "fs/promises";
 import path from "path";
-import { validatePath } from "../helpers/path.js";
+import { validatePath, ensureDirectoryExists } from "../helpers/path.js";
 
 export async function handleWriteNewFiles(
-  files: Array<{path: string, content: string}>, 
+  files: Array<{ path: string; content: string; overwrite?: boolean; encoding?: "utf8" | "base64" }>,
   allowedDirectories: string[]
 ): Promise<string> {
   const results: string[] = [];
   const errors: string[] = [];
-  
+
   await Promise.all(
     files.map(async (file) => {
       try {
         const validPath = await validatePath(file.path, allowedDirectories);
-        
+
         // Check if file already exists
-        try {
-          await fs.access(validPath);
-          // If we get here, the file exists
-          throw new Error(`File already exists. Use patch_files to modify existing files.`);
-        } catch (accessError) {
-          // File doesn't exist, which is what we want for this function
-          if ((accessError as NodeJS.ErrnoException).code !== 'ENOENT') {
-            // Some other error occurred during access check
-            throw accessError;
+        if (!file.overwrite) {
+          try {
+            await fs.access(validPath);
+            // If we get here, the file exists
+            throw new Error("File already exists. Pass overwrite: true to replace it, or use patch_files/edit_files to modify it.");
+          } catch (accessError) {
+            // File doesn't exist, which is what we want for this function
+            if ((accessError as NodeJS.ErrnoException).code !== "ENOENT") {
+              // Some other error occurred during access check
+              throw accessError;
+            }
           }
         }
-        
+
         // Ensure parent directory exists
         const directory = path.dirname(validPath);
-        await fs.mkdir(directory, { recursive: true });
-        
+        await ensureDirectoryExists(directory);
+
         // Write file content
-        await fs.writeFile(validPath, file.content, "utf-8");
-        
-        results.push(`Successfully wrote to ${file.path}`);
+        if (file.encoding === "base64") {
+          await fs.writeFile(validPath, Buffer.from(file.content, "base64"));
+        } else {
+          await fs.writeFile(validPath, file.content, "utf-8");
+        }
+
+        results.push(`Successfully wrote to ${file.path}${file.overwrite ? " (overwritten)" : ""}`);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         errors.push(`Failed to write file ${file.path}: ${errorMessage}`);
       }
     })
   );
-  
+
   // Format the results
   const successCount = results.length;
   const errorCount = errors.length;
-  
+
   let output = `Processed ${successCount + errorCount} files:\n`;
   output += `- ${successCount} files written successfully\n`;
-  
+
+  if (successCount > 0) {
+    output += "Details:\n" + results.join("\n");
+  }
+
   if (errorCount > 0) {
     output += `- ${errorCount} files failed\n\n`;
     output += "Errors:\n" + errors.join("\n");
   }
-  
+
   return output;
 }

@@ -28,6 +28,17 @@ import { CountLinesArgsSchema } from "./count_lines/schema.js";
 import { ChecksumFilesArgsSchema } from "./checksum_files/schema.js";
 import { ChecksumFilesVerifArgsSchema } from "./checksum_files_verif/schema.js";
 import { GetFileInfoArgsSchema } from "./file_info/schema.js";
+import { EditFilesArgsSchema } from "./edit_files/schema.js";
+import { FuzzyFindFilesArgsSchema } from "./fuzzy_find_files/schema.js";
+import { DeleteFilesByPatternArgsSchema } from "./delete_files_by_pattern/schema.js";
+import { ShellRunArgsSchema } from "./shell/schema.js";
+import { ShellTestArgsSchema } from "./shell/schema.js";
+import { ShellStartArgsSchema } from "./shell/schema.js";
+import { ShellCheckArgsSchema } from "./shell/schema.js";
+import { ShellCancelArgsSchema } from "./shell/schema.js";
+import { ShellTerminalArgsSchema } from "./shell/schema.js";
+import { ShellPythonArgsSchema } from "./shell/schema.js";
+import { ShellCwdArgsSchema } from "./shell/schema.js";
 
 // Import all handlers
 import { handleReadFiles } from "./read_files/handler.js";
@@ -49,7 +60,17 @@ import { handleCountLines } from "./count_lines/handler.js";
 import { handleChecksumFiles } from "./checksum_files/handler.js";
 import { handleChecksumFilesVerif } from "./checksum_files_verif/handler.js";
 import { handleGetFileInfo } from "./file_info/handler.js";
-
+import { handleEditFiles } from "./edit_files/handler.js";
+import { handleFuzzyFindFiles } from "./fuzzy_find_files/handler.js";
+import { handleDeleteFilesByPattern } from "./delete_files_by_pattern/handler.js";
+import { handleShellRun } from "./shell/handler.js";
+import { handleShellTest } from "./shell/handler.js";
+import { handleShellStart } from "./shell/handler.js";
+import { handleShellCheck } from "./shell/handler.js";
+import { handleShellCancel } from "./shell/handler.js";
+import { handleShellTerminal } from "./shell/handler.js";
+import { handleShellPython } from "./shell/handler.js";
+import { handleShellCwd } from "./shell/handler.js";
 const ToolInputSchema = ToolSchema.shape.inputSchema;
 type ToolInput = z.infer<typeof ToolInputSchema>;
 
@@ -63,7 +84,7 @@ export class FilesystemServer {
     this.server = new Server(
       {
         name: "secure-filesystem-server",
-        version: "0.2.0",
+        version: "0.2.4",
       },
       {
         capabilities: {
@@ -86,6 +107,7 @@ export class FilesystemServer {
               "Failed reads won't stop the entire operation. " +
               "Each line is prefixed with its line number (format: \"1: line content\"). " +
               "Each file's content is returned with its path as a reference. " +
+              "Use offset (1-indexed start line) and/or limit (max lines) to read a range of a large file. " +
               "Only works within allowed directories.",
             inputSchema: zodToJsonSchema(ReadFilesArgsSchema) as ToolInput,
           },
@@ -93,8 +115,9 @@ export class FilesystemServer {
             name: "write_new_files",
             description:
               "Create multiple new files in a single operation. Works on a single file too. " +
-              "Fails if any file already exists. Use patch_files to modify existing files. " +
-              "Handles text content with UTF-8 encoding. " +
+              "Fails if a file already exists unless its overwrite flag is true. " +
+              "Handles text content with UTF-8 encoding, or base64 content for binary files (encoding: \"base64\"). " +
+              "Parent directories are created as needed. " +
               "Partial failures won't stop the entire operation. " +
               "Only works within allowed directories.",
             inputSchema: zodToJsonSchema(WriteNewFilesArgsSchema) as ToolInput,
@@ -149,9 +172,10 @@ export class FilesystemServer {
             name: "patch_files",
             description:
               "Patch multiple files simultaneously using line numbers. Works on a single file too. " +
-              "Specify line ranges to replace without needing to provide the old text. " +
-              "Can handle different patches for each file. " +
-              "Shows git-style diffs for all changes. " +
+              "Each patch has an action: replace (default, replace lines startLine-endLine with newText), insertBefore (insert newText before startLine; startLine = total lines + 1 appends to the end), or delete (remove lines startLine-endLine). " +
+              "All patches reference the original line numbers. " +
+              "Shows git-style diffs for all changes (dryRun: true previews without writing). " +
+              "Note: files are written back with LF line endings. " +
               "Partial failures won't stop the entire operation. " +
               "Only works within allowed directories.",
             inputSchema: zodToJsonSchema(PatchFilesArgsSchema) as ToolInput,
@@ -169,8 +193,11 @@ export class FilesystemServer {
           {
             name: "list_directory",
             description:
-              "List directory contents with [FILE] or [DIR] prefixes. " +
-              "Shows all files and directories in the specified path. " +
+              "List directory contents with [FILE] or [DIR] prefixes (single level). " +
+              "Entries are sorted by name and paginated with offset/limit (default limit 100). " +
+              "File sizes are shown by default (includeSizes: false to omit). " +
+              "Filter with type (files/directories/all) and ignore glob patterns. " +
+              "Use directory_tree for recursive views. " +
               "Only works within allowed directories.",
             inputSchema: zodToJsonSchema(ListDirectoryArgsSchema) as ToolInput,
           },
@@ -184,22 +211,12 @@ export class FilesystemServer {
             inputSchema: zodToJsonSchema(DirectoryTreeArgsSchema) as ToolInput,
           },
           {
-            name: "move_files",
-            description:
-              "Move or rename multiple files and directories in a single operation. Works on a single file too. " +
-              "By default fails if any destination exists, use overwrite flag to force. " +
-              "Creates parent directories of destinations if needed. " +
-              "Partial failures won't stop the entire operation. " +
-              "All sources and destinations must be within allowed directories.",
-            inputSchema: zodToJsonSchema(MoveFilesArgsSchema) as ToolInput,
-          },
-          {
             name: "search_files",
             description:
-              "Recursively search for files/directories. " +
+              "Recursively search for files/directories by name substring. " +
               "Case-insensitive matching. " +
               "Supports exclude patterns with glob format. " +
-              "Returns full paths to matches. " +
+              "Returns full paths to matches, paginated with offset/maxResults (default 500). " +
               "Only searches within allowed directories.",
             inputSchema: zodToJsonSchema(SearchFilesArgsSchema) as ToolInput,
           },
@@ -207,9 +224,9 @@ export class FilesystemServer {
             name: "search_regex",
             description:
               "Search file contents using regular expressions. " +
-              "Recursively searches all files in specified directory. " +
+              "path can be a directory (recursively searched) or a single file. " +
               "Supports filtering files by patterns. " +
-              "Returns matching lines with line numbers and context. " +
+              "Returns matching lines with line numbers, paginated with offset/maxResults (default 100). " +
               "Only searches within allowed directories.",
             inputSchema: zodToJsonSchema(SearchRegexArgsSchema) as ToolInput,
           },
@@ -219,7 +236,7 @@ export class FilesystemServer {
               "Find files using glob patterns. " +
               "Supports powerful patterns like '**/*.js' or 'src/**/*.{ts,tsx}'. " +
               "Excludes can be specified to filter results. " +
-              "Returns full paths to matching files. " +
+              "Returns full paths to matching files, paginated with offset/maxResults (default 500). " +
               "Only searches within allowed directories.",
             inputSchema: zodToJsonSchema(SearchGlobArgsSchema) as ToolInput,
           },
@@ -271,6 +288,119 @@ export class FilesystemServer {
               required: [],
             },
           },
+        {
+            name: "edit_files",
+            description:
+              "Edit files using exact text replacement. Works on a single file too. " +
+              "Each edit specifies an oldString (exact literal text) and a newString. Edits apply in order. " +
+              "By default each oldString must match exactly once (set replaceAll: true to replace all occurrences). " +
+              "Line endings are handled automatically: \\n in strings matches CRLF files, and the file's dominant line ending is preserved on write. " +
+              "A failed edit aborts that file before anything is written. " +
+              "Only works within allowed directories.",
+            inputSchema: zodToJsonSchema(EditFilesArgsSchema) as ToolInput,
+          },
+          {
+            name: "fuzzy_find_files",
+            description:
+              "Fuzzy find files by name/path similarity (Levenshtein distance). " +
+              "Typo-tolerant; for substring matching use search_files. " +
+              "Returns the best matches with their distance scores. " +
+              "Only works within allowed directories.",
+            inputSchema: zodToJsonSchema(FuzzyFindFilesArgsSchema) as ToolInput,
+          },
+          {
+            name: "delete_files_by_pattern",
+            description:
+              "Delete entries in a single directory whose names match a regular expression (e.g. '^temp_.*\\.txt$'). " +
+              "Subdirectories are not scanned. Directories are only deleted when includeDirectories is true. " +
+              "Use with caution as the operation is permanent. " +
+              "Only works within allowed directories.",
+            inputSchema: zodToJsonSchema(DeleteFilesByPatternArgsSchema) as ToolInput,
+          },
+          {
+            name: "transfer_files",
+            description:
+              "Move or rename multiple files and directories in a single operation. Works on a single file too. " +
+              "By default fails if any destination exists, use overwrite flag to force. " +
+              "Creates parent directories of destinations if needed. " +
+              "Partial failures won't stop the entire operation. " +
+              "All sources and destinations must be within allowed directories.",
+            inputSchema: zodToJsonSchema(MoveFilesArgsSchema) as ToolInput,
+          },
+          {
+            name: "shell_run",
+            description:
+              "Execute a shell command synchronously and return exit code, stdout, and stderr. " +
+              "Host is Windows; use cmd.exe syntax (e.g. `dir C:\\`, `powershell -NoProfile -Command ...`). " +
+              "Optional input is piped to the command's stdin. " +
+              "Optional cwd overrides the default working directory (see shell_cwd). " +
+              "Bounded: default 5 s timeout, max 28 s - for anything longer use shell_start (background job) and poll with shell_check. " +
+              "Non-zero exit or timeout returns an error that still includes the captured output.",
+            inputSchema: zodToJsonSchema(ShellRunArgsSchema) as ToolInput,
+          },
+          {
+            name: "shell_test",
+            description:
+              "Execute a test command (e.g. `npm test`, `pytest`) and return {command, exit_code, stdout, stderr, passed}. " +
+              "Never errors on a failing test. Runs with CI=true. " +
+              "Host is Windows; use cmd.exe syntax. " +
+              "Bounded to 28 s by the MCP client timeout - for longer suites use shell_start + shell_check.",
+            inputSchema: zodToJsonSchema(ShellTestArgsSchema) as ToolInput,
+          },
+          {
+            name: "shell_start",
+            description:
+              "Start a long-running shell command as a background job and return immediately with a job ID. " +
+              "Host is Windows; use cmd.exe syntax. " +
+              "The job keeps running inside this MCP server process; output is captured (last 256 KB of stdout/stderr) and appended to a log file. " +
+              "Auto-killed after timeout_hours (default 10, max 10). " +
+              "Poll with shell_check; kill with shell_cancel. " +
+              "Optional cwd overrides the default working directory (see shell_cwd).",
+            inputSchema: zodToJsonSchema(ShellStartArgsSchema) as ToolInput,
+          },
+          {
+            name: "shell_check",
+            description:
+              "Check the status and output of a shell background job started with shell_start (or a shell_terminal window). " +
+              "Returns {id, name, status, exitCode, duration_seconds, stdout_tail, stderr_tail, logFile}. " +
+              "Status values: running, completed, error, cancelled, timeout.",
+            inputSchema: zodToJsonSchema(ShellCheckArgsSchema) as ToolInput,
+          },
+          {
+            name: "shell_cancel",
+            description:
+              "Kill a running shell job (from shell_start or shell_terminal) by job ID. " +
+              "Kills the whole process tree.",
+            inputSchema: zodToJsonSchema(ShellCancelArgsSchema) as ToolInput,
+          },
+          {
+            name: "shell_terminal",
+            description:
+              "Open a visible, separate, interactive cmd.exe console window (Windows) that runs the given command (as a batch file) with cmd /k. " +
+              "The window has its own console (the user can type into it) and persists after the command finishes. " +
+              "Use it for interactive sessions (ssh, REPLs, TUI programs, prompted installers) - the one case shell_start cannot cover. " +
+              "Returns a job ID with the window's PID; close the window (kill the whole tree) with shell_cancel. " +
+              "Optional cwd sets the window's starting directory.",
+            inputSchema: zodToJsonSchema(ShellTerminalArgsSchema) as ToolInput,
+          },
+          {
+            name: "shell_python",
+            description:
+              "Execute a Python code snippet (requires system Python on PATH). " +
+              "Writes the code to a temp .py file and runs it. " +
+              "Returns exit code, stdout, stderr. " +
+              "Default 5 s timeout, max 28 s; optional cwd. " +
+              "Non-zero exit returns an error that still includes the captured output.",
+            inputSchema: zodToJsonSchema(ShellPythonArgsSchema) as ToolInput,
+          },
+          {
+            name: "shell_cwd",
+            description:
+              "Get or set the default working directory used by the other shell_* tools. " +
+              "With no argument returns the current default; with path sets it (must be an existing directory). " +
+              "The default starts as the MCP server process's CWD and resets when the server restarts.",
+            inputSchema: zodToJsonSchema(ShellCwdArgsSchema) as ToolInput,
+          },
         ],
       };
     });
@@ -286,7 +416,7 @@ export class FilesystemServer {
             if (!parsed.success) {
               throw new Error(`Invalid arguments for read_files: ${parsed.error}`);
             }
-            const result = await handleReadFiles(parsed.data.paths, this.allowedDirectories);
+            const result = await handleReadFiles(parsed.data.paths, this.allowedDirectories, parsed.data.offset, parsed.data.limit);
             return {
               content: [{ type: "text", text: result }],
             };
@@ -434,7 +564,7 @@ export class FilesystemServer {
             if (!parsed.success) {
               throw new Error(`Invalid arguments for list_directory: ${parsed.error}`);
             }
-            const result = await handleListDirectory(parsed.data.path, this.allowedDirectories);
+            const result = await handleListDirectory(parsed.data.path, this.allowedDirectories, parsed.data.type, parsed.data.ignore, parsed.data.offset, parsed.data.limit, parsed.data.includeSizes);
             return {
               content: [{ type: "text", text: result }],
             };
@@ -461,10 +591,10 @@ export class FilesystemServer {
           }
 
 
-          case "move_files": {
+          case "transfer_files": {
             const parsed = MoveFilesArgsSchema.safeParse(args);
             if (!parsed.success) {
-              throw new Error(`Invalid arguments for move_files: ${parsed.error}`);
+              throw new Error(`Invalid arguments for transfer_files: ${parsed.error}`);
             }
             
             const result = await handleMoveFiles(
@@ -488,6 +618,8 @@ export class FilesystemServer {
               parsed.data.path,
               parsed.data.pattern,
               parsed.data.excludePatterns,
+              parsed.data.maxResults,
+              parsed.data.offset,
               this.allowedDirectories
             );
             
@@ -509,6 +641,7 @@ export class FilesystemServer {
               parsed.data.excludePatterns,
               parsed.data.maxResults,
               parsed.data.caseSensitive,
+              parsed.data.offset,
               this.allowedDirectories
             );
             
@@ -528,6 +661,7 @@ export class FilesystemServer {
               parsed.data.pattern,
               parsed.data.excludePatterns,
               parsed.data.maxResults,
+              parsed.data.offset,
               this.allowedDirectories
             );
             
@@ -612,6 +746,159 @@ export class FilesystemServer {
                 type: "text",
                 text: `Allowed directories:\n${this.allowedDirectories.join('\n')}`
               }],
+            };
+          }
+
+          case "edit_files": {
+            const parsed = EditFilesArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for edit_files: ${parsed.error}`);
+            }
+
+            const result = await handleEditFiles(parsed.data.files, this.allowedDirectories);
+
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "fuzzy_find_files": {
+            const parsed = FuzzyFindFilesArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for fuzzy_find_files: ${parsed.error}`);
+            }
+
+            const result = await handleFuzzyFindFiles(
+              parsed.data.query,
+              parsed.data.path,
+              parsed.data.recursive,
+              parsed.data.maxResults,
+              parsed.data.scanLimit,
+              this.allowedDirectories
+            );
+
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "delete_files_by_pattern": {
+            const parsed = DeleteFilesByPatternArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for delete_files_by_pattern: ${parsed.error}`);
+            }
+
+            const result = await handleDeleteFilesByPattern(
+              parsed.data.directory,
+              parsed.data.pattern,
+              parsed.data.includeDirectories,
+              this.allowedDirectories
+            );
+
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "shell_run": {
+            const parsed = ShellRunArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for shell_run: ${parsed.error}`);
+            }
+            const result = await handleShellRun(
+              parsed.data.command,
+              parsed.data.input,
+              parsed.data.timeout_seconds,
+              parsed.data.cwd
+            );
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "shell_test": {
+            const parsed = ShellTestArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for shell_test: ${parsed.error}`);
+            }
+            const result = await handleShellTest(parsed.data.command, parsed.data.cwd);
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "shell_start": {
+            const parsed = ShellStartArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for shell_start: ${parsed.error}`);
+            }
+            const result = await handleShellStart(
+              parsed.data.command,
+              parsed.data.name,
+              parsed.data.timeout_hours,
+              parsed.data.cwd
+            );
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "shell_check": {
+            const parsed = ShellCheckArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for shell_check: ${parsed.error}`);
+            }
+            const result = await handleShellCheck(parsed.data.id);
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "shell_cancel": {
+            const parsed = ShellCancelArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for shell_cancel: ${parsed.error}`);
+            }
+            const result = await handleShellCancel(parsed.data.id);
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "shell_terminal": {
+            const parsed = ShellTerminalArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for shell_terminal: ${parsed.error}`);
+            }
+            const result = await handleShellTerminal(parsed.data.command, parsed.data.cwd);
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "shell_python": {
+            const parsed = ShellPythonArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for shell_python: ${parsed.error}`);
+            }
+            const result = await handleShellPython(
+              parsed.data.python,
+              parsed.data.timeout_seconds,
+              parsed.data.cwd
+            );
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "shell_cwd": {
+            const parsed = ShellCwdArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for shell_cwd: ${parsed.error}`);
+            }
+            const result = await handleShellCwd(parsed.data.path);
+            return {
+              content: [{ type: "text", text: result }],
             };
           }
 

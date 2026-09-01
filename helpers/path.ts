@@ -39,18 +39,52 @@ export async function validatePath(requestedPath: string, allowedDirectories: st
     }
     return realPath;
   } catch (error) {
-    // For new files that don't exist yet, verify parent directory
-    const parentDir = path.dirname(absolute);
-    try {
-      const realParentPath = await fs.realpath(parentDir);
-      const normalizedParent = normalizePath(realParentPath);
-      const isParentAllowed = allowedDirectories.some(dir => normalizedParent.startsWith(dir));
-      if (!isParentAllowed) {
-        throw new Error("Access denied - parent directory outside allowed directories");
+    // Target doesn't exist yet: walk up to the nearest existing ancestor
+    // and verify it is within an allowed directory
+    let ancestor = path.dirname(absolute);
+    let realAncestor: string | null = null;
+    while (true) {
+      try {
+        realAncestor = await fs.realpath(ancestor);
+        break;
+      } catch {
+        const up = path.dirname(ancestor);
+        if (up === ancestor) {
+          break;
+        }
+        ancestor = up;
       }
-      return absolute;
-    } catch {
-      throw new Error(`Parent directory does not exist: ${parentDir}`);
     }
+    if (realAncestor === null) {
+      throw new Error(`Parent directory does not exist: ${path.dirname(absolute)}`);
+    }
+    const normalizedAncestor = normalizePath(realAncestor);
+    const isAncestorAllowed = allowedDirectories.some(dir => normalizedAncestor.startsWith(dir));
+    if (!isAncestorAllowed) {
+      throw new Error("Access denied - parent directory outside allowed directories");
+    }
+    return absolute;
+  }
+}
+
+// Create a directory (and parents) if needed. Tolerates volume roots,
+// which Node's recursive mkdir can reject with EPERM on Windows.
+export async function ensureDirectoryExists(dir: string): Promise<void> {
+  try {
+    const stats = await fs.stat(dir);
+    if (stats.isDirectory()) {
+      return;
+    }
+  } catch {
+    // Doesn't exist or is inaccessible - fall through and try to create
+  }
+  try {
+    await fs.mkdir(dir, { recursive: true });
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'EPERM' || code === 'EEXIST') {
+      return;
+    }
+    throw error;
   }
 }

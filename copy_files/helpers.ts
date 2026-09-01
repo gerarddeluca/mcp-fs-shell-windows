@@ -1,10 +1,10 @@
 import fs from "fs/promises";
 import path from "path";
-import { validatePath } from "../helpers/path.js";
+import { validatePath, ensureDirectoryExists } from "../helpers/path.js";
 
 export async function copyDir(src: string, dest: string, allowedDirectories: string[]) {
   // Create destination if it doesn't exist
-  await fs.mkdir(dest, { recursive: true });
+  await ensureDirectoryExists(dest);
   
   // Get all files in the source directory
   const entries = await fs.readdir(src, { withFileTypes: true });

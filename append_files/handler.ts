@@ -1,6 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
-import { validatePath } from "../helpers/path.js";
+import { validatePath, ensureDirectoryExists } from "../helpers/path.js";
 
 export async function handleAppendFiles(
   files: Array<{path: string, content: string}>, 
@@ -16,7 +16,7 @@ export async function handleAppendFiles(
         
         // Ensure parent directory exists
         const directory = path.dirname(validPath);
-        await fs.mkdir(directory, { recursive: true });
+        await ensureDirectoryExists(directory);
         
         // Append content to file (create if doesn't exist)
         await fs.appendFile(validPath, file.content, "utf-8");
