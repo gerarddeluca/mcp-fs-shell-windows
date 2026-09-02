@@ -15,7 +15,7 @@ import { SHELL_MAX_TIMEOUT_SEC } from "./schema.js";
 // Shared state & helpers
 // ---------------------------------------------------------------------------
 
-export const SHELL_JOBS_DIR = nodePath.join(os.tmpdir(), "mcp-filesystem-extended", "shell-jobs");
+export const SHELL_JOBS_DIR = nodePath.join(os.tmpdir(), "mcp-fs-shell-windows", "shell-jobs");
 
 export interface ShellJob {
   id: string;

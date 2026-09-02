@@ -109,7 +109,7 @@ User commands are spawned as `cmd.exe /d /c <command>` with **verbatim argv** â€
 
 Practical notes:
 
-- Background jobs live in an **in-memory registry** inside the server process: the table is lost on server restart, but job log files persist (under `%TEMP%\mcp-filesystem-extended\shell-jobs`).
+- Background jobs live in an **in-memory registry** inside the server process: the table is lost on server restart, but job log files persist (under `%TEMP%\mcp-fs-shell-windows\shell-jobs`).
 - `timeout /t` can fail when stdin is not an interactive console â€” use `ping -n N 127.0.0.1 >nul` for sleeps.
 - Synchronous calls are bounded (max 28 s) so they cannot wedge the MCP request channel; anything longer should go through `shell_start`.
 
