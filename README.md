@@ -1,8 +1,10 @@
 # mcp-fs-shell-windows — filesystem + standalone Windows shell MCP server
 
-A Node.js MCP server exposing **filesystem operations** and a **standalone shell** as tools. Heavily extended fork of [fabienvauchelles/mcp-filesystem-extended](https://github.com/fabienvauchelles/mcp-filesystem-extended), which itself extends the official [`@modelcontextprotocol/server-filesystem`](https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem).
+A Windows-first MCP server that gives AI clients **comprehensive filesystem access** (batched read/write/search/patch across your chosen drives and UNC shares) plus **reliable local shell execution** (synchronous, background, and interactive) — in a single Node.js process with no client-side permission toggles.
 
-Developed and tested primarily on **Windows**: drive-letter roots (`C:\`, `D:\`) and UNC network-share roots (`\\server\\share`) are first-class, and the shell tools run commands through `cmd.exe` byte-for-byte — including background job management and detached interactive console windows.
+Heavily extended fork of [fabienvauchelles/mcp-filesystem-extended](https://github.com/fabienvauchelles/mcp-filesystem-extended), which itself extends the official [`@modelcontextprotocol/server-filesystem`](https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem). Developed and tested primarily on **Windows**: drive-letter roots (`C:\`, `D:\`) and UNC network-share roots (`\\server\\share`) are first-class, and the shell tools run commands through `cmd.exe` byte-for-byte.
+
+**npm:** [mcp-fs-shell-windows](https://www.npmjs.com/package/mcp-fs-shell-windows) · **Source:** [gerarddeluca/mcp-fs-shell-windows](https://github.com/gerarddeluca/mcp-fs-shell-windows)
 
 ## Provenance
 
@@ -25,40 +27,42 @@ Developed and tested primarily on **Windows**: drive-letter roots (`C:\`, `D:\`)
 - Windows for the shell tools (they spawn `cmd.exe`, `taskkill`, and `powershell`). The filesystem tools work on any platform Node runs on.
 - `shell_python` requires Python on the system PATH.
 
-## Build
+## Quick start (npm)
+
+Published on npm — `npx` downloads the server (and all dependencies) and runs it:
 
 ```bat
-npm ci
-npm run build
+npx -y mcp-fs-shell-windows C:\ D:\
 ```
 
-Run the server:
-
-```bat
-node dist\index.js <allowed-dir> [more-dirs...]
-```
-
-## Usage
-
-Example MCP client config (Claude Desktop / LM Studio `mcp.json` style):
+MCP client config (Claude Desktop / LM Studio `mcp.json` style):
 
 ```json
 {
   "mcpServers": {
     "filesystem": {
-      "command": "node",
-      "args": [
-        "C:/path/to/repo/dist/index.js",
-        "C:\\",
-        "D:\\",
-        "\\\\server\\share"
-      ]
+      "command": "npx",
+      "args": ["-y", "mcp-fs-shell-windows", "C:\\", "D:\\", "\\\\server\\share"]
     }
   }
 }
 ```
 
 The filesystem tools can only touch the passed directories (and anything under them). A root that cannot be accessed at startup logs a warning and is skipped; the server keeps running. Note that the shell tools are **not** root-restricted — see [Security](#security).
+
+## Build from source
+
+For developers, or to run uncommitted changes:
+
+```bat
+git clone https://github.com/gerarddeluca/mcp-fs-shell-windows
+cd mcp-fs-shell-windows
+npm ci
+npm run build
+node dist\index.js <allowed-dir> [more-dirs...]
+```
+
+Then point your MCP config at `node <path-to-repo>\dist\index.js` with the allowed directories as the remaining args (same shape as the npx example above).
 
 ### Filesystem tools (23)
 
@@ -112,8 +116,8 @@ Practical notes:
 ## Docker
 
 ```bat
-docker build -t mcp/filesystem-extended .
-docker run -i --rm -v /path/to/dir:/data mcp/filesystem-extended /data
+docker build -t mcp-fs-shell-windows .
+docker run -i --rm -v /path/to/dir:/data mcp-fs-shell-windows /data
 ```
 
 The filesystem tools work in the image; the shell tools require a Windows host with `cmd.exe`.

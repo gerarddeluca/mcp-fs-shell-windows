@@ -1,9 +1,17 @@
 {
   "name": "mcp-fs-shell-windows",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "MCP filesystem server: batched file tools + standalone Windows shell tools (extended fork)",
   "license": "MIT",
-  "author": "Gerard",
+  "author": "Gerard DeLuca",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gerarddeluca/mcp-fs-shell-windows.git"
+  },
+  "homepage": "https://github.com/gerarddeluca/mcp-fs-shell-windows#readme",
+  "bugs": {
+    "url": "https://github.com/gerarddeluca/mcp-fs-shell-windows/issues"
+  },
   "engines": {
     "node": ">=20"
   },
