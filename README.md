@@ -12,12 +12,13 @@ Heavily extended fork of [fabienvauchelles/mcp-filesystem-extended](https://gith
 |---|---|
 | Official base | `@modelcontextprotocol/server-filesystem` (Anthropic, PBC; MIT) |
 | Base fork | [fabienvauchelles/mcp-filesystem-extended](https://github.com/fabienvauchelles/mcp-filesystem-extended) @ `b6c317a` (MIT) |
-| This fork | v0.2.1 tool parity + `transfer_files` rename, robustness patches, 8 shell tools (v0.2.2), verbatim argv (v0.2.4) — see [Differences](#differences-from-the-base-fork) |
+| This fork | v0.2.1 tool parity + `transfer_files` rename, robustness patches, 8 shell tools (v0.2.2), verbatim argv (v0.2.4), `launch_file` launcher (v0.2.7) — see [Differences](#differences-from-the-base-fork) |
 
 ## Features
 
 - **23 filesystem tools** — batched read/write/append/delete, move/copy, line-number patching, search (name / glob / regex / fuzzy), tree, counts, checksums, diffs, exact-match text editing. Confined to the allowed directories passed on the command line.
 - **8 shell tools** — synchronous, background, and interactive command execution implemented *inside the MCP server process*: no client-side permission toggles, survives client restarts, works with any MCP client.
+- **1 launcher tool** (`launch_file`, Windows-only) — opens files, folders, and http(s) links in their OS default app, fully detached: returns the moment the opener is spawned (never waits for the app), no console window, no stdio inheritance; filesystem targets are confined to the allowed directories.
 - **Windows-first** — drive roots, UNC roots, `cmd.exe /d /c` with verbatim argv, whole-process-tree kills (`taskkill /T /F`), detached interactive console windows.
 - **NAS-safe startup** — an allowed directory that is missing or offline (e.g., a powered-down network share) logs a warning and the server continues instead of exiting.
 
@@ -113,6 +114,12 @@ Practical notes:
 - `timeout /t` can fail when stdin is not an interactive console — use `ping -n N 127.0.0.1 >nul` for sleeps.
 - Synchronous calls are bounded (max 28 s) so they cannot wedge the MCP request channel; anything longer should go through `shell_start`.
 
+### Launcher tool (1, Windows-only)
+
+| Tool | Purpose |
+|---|---|
+| `launch_file` | Launch a file, folder, or http(s) link via the Windows shell opener (`explorer.exe` — the OS default association: VLC for .mkv, Explorer for folders, default browser for web links). The target is passed as a single argv element (spaces, Unicode, `&`, apostrophes, parentheses all safe) and the call returns as soon as the opener process is actually spawned — it never waits for the opened app, creates no console window, and inherits no stdio pipes. Filesystem paths are subject to the allowed-root policy and checked for existence; only `http://`/`https://` links are launched, every other URL scheme (`file:`, `javascript:`, `ms-*`, `steam:`, …) is rejected, so no `file:` URI can bypass the filesystem policy. A failed opener spawn errors instead of reporting success. The response reports `dispatched: true` (the opener process was created) — not that the app handled the target. A host-settable `LAUNCH_FILE_OPENER` env var overrides the opener executable (test seam). |
+
 ## Docker
 
 ```bat
@@ -140,10 +147,13 @@ The filesystem tools work in the image; the shell tools require a Windows host w
 
 **v0.2.4 — verbatim argv:** `windowsVerbatimArguments` + `/d` on all user-command spawns (run/test/start and the terminal launcher).
 
+**v0.2.7 — `launch_file`:** the detached OS launcher (see above). Renamed from a local `open_file` prototype so it cannot collide with other servers' `open_file` tools. Hardened: spawn-failure returns an error (the handler awaits the child's `spawn`/`error` events — it never reports success for a process Windows refused to create), URLs are restricted to http(s) so `file:` URIs cannot bypass the allowed-root policy, and non-Windows platforms fail with a clear error.
+
 ## Security
 
 - The filesystem tools are confined to the allowed directories passed at startup (and their subtrees).
 - The shell tools are **not** confined: anything the server process's user can execute will run, including against reachable network shares. Grant this server the same trust you would grant an unsandboxed shell.
+- `launch_file` targets are confined to the allowed directories (for paths), but the opened application runs with the full rights of the server user — like anything you double-click.
 - The server communicates over stdio and opens no network endpoints of its own.
 
 ## License

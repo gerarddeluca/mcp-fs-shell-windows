@@ -31,6 +31,7 @@ import { GetFileInfoArgsSchema } from "./file_info/schema.js";
 import { EditFilesArgsSchema } from "./edit_files/schema.js";
 import { FuzzyFindFilesArgsSchema } from "./fuzzy_find_files/schema.js";
 import { DeleteFilesByPatternArgsSchema } from "./delete_files_by_pattern/schema.js";
+import { LaunchFileArgsSchema } from "./launch_file/schema.js";
 import { ShellRunArgsSchema } from "./shell/schema.js";
 import { ShellTestArgsSchema } from "./shell/schema.js";
 import { ShellStartArgsSchema } from "./shell/schema.js";
@@ -63,6 +64,7 @@ import { handleGetFileInfo } from "./file_info/handler.js";
 import { handleEditFiles } from "./edit_files/handler.js";
 import { handleFuzzyFindFiles } from "./fuzzy_find_files/handler.js";
 import { handleDeleteFilesByPattern } from "./delete_files_by_pattern/handler.js";
+import { handleLaunchFile } from "./launch_file/handler.js";
 import { handleShellRun } from "./shell/handler.js";
 import { handleShellTest } from "./shell/handler.js";
 import { handleShellStart } from "./shell/handler.js";
@@ -84,7 +86,7 @@ export class FilesystemServer {
     this.server = new Server(
       {
         name: "secure-filesystem-server",
-        version: "0.2.4",
+        version: "0.2.7",
       },
       {
         capabilities: {
@@ -400,6 +402,15 @@ export class FilesystemServer {
               "With no argument returns the current default; with path sets it (must be an existing directory). " +
               "The default starts as the MCP server process's CWD and resets when the server restarts.",
             inputSchema: zodToJsonSchema(ShellCwdArgsSchema) as ToolInput,
+          },
+          {
+            name: "launch_file",
+            description:
+              "Launch a file, folder, or web link in its Windows-associated application (the OS default: e.g. VLC for .mkv/.mp4, Explorer for folders, the default browser for http(s) URLs). " +
+              "File/folder paths must be within the allowed directories (C:/, D:/, M:, NAS UNC) and are checked for existence; only http:// and https:// links are launched - file: URLs and other protocol schemes (javascript:, ms-*, steam:, vlc:) are rejected. " +
+              "The launch is fully detached: it returns once Windows has spawned the shell opener - it never waits for the opened application, does not inherit the server's stdio pipes, creates no intermediary console window, and passes file names verbatim (spaces, Unicode, apostrophes, ampersands, parentheses all safe). " +
+              "Errors if the path does not exist, is outside the allowed directories, the URL scheme is not http/https, or the opener fails to spawn.",
+            inputSchema: zodToJsonSchema(LaunchFileArgsSchema) as ToolInput,
           },
         ],
       };
@@ -897,6 +908,17 @@ export class FilesystemServer {
               throw new Error(`Invalid arguments for shell_cwd: ${parsed.error}`);
             }
             const result = await handleShellCwd(parsed.data.path);
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "launch_file": {
+            const parsed = LaunchFileArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for launch_file: ${parsed.error}`);
+            }
+            const result = await handleLaunchFile(parsed.data.path, this.allowedDirectories);
             return {
               content: [{ type: "text", text: result }],
             };
