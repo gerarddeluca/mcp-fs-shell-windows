@@ -1,6 +1,22 @@
 import fs from "fs/promises";
 import { createUnifiedDiff, normalizeLineEndings } from "../helpers/diff.js";
 
+// Detect the dominant line ending of the raw file content so it can be
+// restored on write (mirrors the edit_files approach). CRLF is chosen only
+// when it is the strict majority of the file's newlines; otherwise the file
+// is treated as LF (also the outcome for a CRLF/LF tie, matching the
+// previous LF-normalizing default).
+function detectDominantEol(text: string): string {
+  const crlf = (text.match(/\r\n/g) || []).length;
+  const others = (text.replace(/\r\n/g, "").match(/[\r\n]/g) || []).length;
+  return crlf > others ? "\r\n" : "\n";
+}
+
+// Re-apply the dominant line ending to LF-normalized content (no-op for LF).
+function fromLf(text: string, eol: string): string {
+  return eol === "\n" ? text : text.replace(/\n/g, eol);
+}
+
 export interface PatchOptions {
   preserveIndentation: boolean;
 }
@@ -20,8 +36,12 @@ export async function applyFilePatches(
   dryRun: boolean = false,
   options: PatchOptions = { preserveIndentation: true }
 ): Promise<string> {
-  // Read file content and normalize line endings
-  const content = normalizeLineEndings(await fs.readFile(filePath, "utf-8"));
+  // Read the raw file, detect its dominant line ending, and normalize to LF
+  // for patching. The dominant ending is restored on write so the file keeps
+  // its original EOL convention.
+  const raw = await fs.readFile(filePath, "utf-8");
+  const eol = detectDominantEol(raw);
+  const content = normalizeLineEndings(raw);
 
   // Split content into lines
   const contentLines = content.split("\n");
@@ -140,7 +160,8 @@ export async function applyFilePatches(
   });
 
   if (!dryRun) {
-    await fs.writeFile(filePath, modifiedContent, "utf-8");
+    // Write back with the file's original dominant line ending.
+    await fs.writeFile(filePath, fromLf(modifiedContent, eol), "utf-8");
   }
 
   return resultText;

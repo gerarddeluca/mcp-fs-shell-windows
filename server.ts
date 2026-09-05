@@ -86,7 +86,7 @@ export class FilesystemServer {
     this.server = new Server(
       {
         name: "secure-filesystem-server",
-        version: "0.2.7",
+        version: "0.2.8",
       },
       {
         capabilities: {
