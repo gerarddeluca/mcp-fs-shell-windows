@@ -32,6 +32,8 @@ import { EditFilesArgsSchema } from "./edit_files/schema.js";
 import { FuzzyFindFilesArgsSchema } from "./fuzzy_find_files/schema.js";
 import { DeleteFilesByPatternArgsSchema } from "./delete_files_by_pattern/schema.js";
 import { LaunchFileArgsSchema } from "./launch_file/schema.js";
+import { ReadBytesArgsSchema } from "./read_bytes/schema.js";
+import { WriteBytesArgsSchema } from "./write_bytes/schema.js";
 import { ShellRunArgsSchema } from "./shell/schema.js";
 import { ShellTestArgsSchema } from "./shell/schema.js";
 import { ShellStartArgsSchema } from "./shell/schema.js";
@@ -65,6 +67,8 @@ import { handleEditFiles } from "./edit_files/handler.js";
 import { handleFuzzyFindFiles } from "./fuzzy_find_files/handler.js";
 import { handleDeleteFilesByPattern } from "./delete_files_by_pattern/handler.js";
 import { handleLaunchFile } from "./launch_file/handler.js";
+import { handleReadBytes } from "./read_bytes/handler.js";
+import { handleWriteBytes } from "./write_bytes/handler.js";
 import { handleShellRun } from "./shell/handler.js";
 import { handleShellTest } from "./shell/handler.js";
 import { handleShellStart } from "./shell/handler.js";
@@ -86,7 +90,7 @@ export class FilesystemServer {
     this.server = new Server(
       {
         name: "secure-filesystem-server",
-        version: "0.2.8",
+        version: "0.2.9",
       },
       {
         capabilities: {
@@ -411,6 +415,27 @@ export class FilesystemServer {
               "The launch is fully detached: it returns once Windows has spawned the shell opener - it never waits for the opened application, does not inherit the server's stdio pipes, creates no intermediary console window, and passes file names verbatim (spaces, Unicode, apostrophes, ampersands, parentheses all safe). " +
               "Errors if the path does not exist, is outside the allowed directories, the URL scheme is not http/https, or the opener fails to spawn.",
             inputSchema: zodToJsonSchema(LaunchFileArgsSchema) as ToolInput,
+          },
+          {
+            name: "read_bytes",
+            description:
+              "Read raw bytes from a file at a given (offset, length). " +
+              "All arguments are integers: offset >= 0, length >= 1. " +
+              "An offset at or beyond the file's end (offset >= size) is an error ('offset beyond EOF'); if offset+length exceeds the file size, the read is clamped to EOF. " +
+              "Returns JSON text: {path, offset, length, actualLength, size, dataBase64} where dataBase64 is base64 of the bytes actually read. " +
+              "Works on binary files of any size (e.g. GGUFs, blobs). " +
+              "Only works within allowed directories.",
+            inputSchema: zodToJsonSchema(ReadBytesArgsSchema) as ToolInput,
+          },
+          {
+            name: "write_bytes",
+            description:
+              "Write raw bytes to an existing file at a given offset (base64 input). " +
+              "The file must already exist (no implicit create); invalid base64 is an error. " +
+              "With the default extend=false, offset+bytes.length must not exceed the file size (else an error) and the bytes overwrite in place. " +
+              "With extend=true the file is grown when the write ends past EOF, zero-filling any gap between the old size and the offset. " +
+              "Only works within allowed directories.",
+            inputSchema: zodToJsonSchema(WriteBytesArgsSchema) as ToolInput,
           },
         ],
       };
@@ -919,6 +944,39 @@ export class FilesystemServer {
               throw new Error(`Invalid arguments for launch_file: ${parsed.error}`);
             }
             const result = await handleLaunchFile(parsed.data.path, this.allowedDirectories);
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "read_bytes": {
+            const parsed = ReadBytesArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for read_bytes: ${parsed.error}`);
+            }
+            const result = await handleReadBytes(
+              parsed.data.path,
+              parsed.data.offset,
+              parsed.data.length,
+              this.allowedDirectories
+            );
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "write_bytes": {
+            const parsed = WriteBytesArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for write_bytes: ${parsed.error}`);
+            }
+            const result = await handleWriteBytes(
+              parsed.data.path,
+              parsed.data.offset,
+              parsed.data.dataBase64,
+              parsed.data.extend,
+              this.allowedDirectories
+            );
             return {
               content: [{ type: "text", text: result }],
             };
