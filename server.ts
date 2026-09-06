@@ -35,6 +35,7 @@ import { LaunchFileArgsSchema } from "./launch_file/schema.js";
 import { ReadBytesArgsSchema } from "./read_bytes/schema.js";
 import { WriteBytesArgsSchema } from "./write_bytes/schema.js";
 import { DirDiffArgsSchema } from "./dir_diff/schema.js";
+import { ConvertEncodingArgsSchema } from "./convert_encoding/schema.js";
 import { ShellRunArgsSchema } from "./shell/schema.js";
 import { ShellTestArgsSchema } from "./shell/schema.js";
 import { ShellStartArgsSchema } from "./shell/schema.js";
@@ -71,6 +72,7 @@ import { handleLaunchFile } from "./launch_file/handler.js";
 import { handleReadBytes } from "./read_bytes/handler.js";
 import { handleWriteBytes } from "./write_bytes/handler.js";
 import { handleDirDiff } from "./dir_diff/handler.js";
+import { handleConvertEncoding } from "./convert_encoding/handler.js";
 import { handleShellRun } from "./shell/handler.js";
 import { handleShellTest } from "./shell/handler.js";
 import { handleShellStart } from "./shell/handler.js";
@@ -92,7 +94,7 @@ export class FilesystemServer {
     this.server = new Server(
       {
         name: "secure-filesystem-server",
-        version: "0.2.10",
+        version: "0.2.11",
       },
       {
         capabilities: {
@@ -116,6 +118,8 @@ export class FilesystemServer {
               "Each line is prefixed with its line number (format: \"1: line content\"). " +
               "Each file's content is returned with its path as a reference. " +
               "Use offset (1-indexed start line) and/or limit (max lines) to read a range of a large file. " +
+              "Each paths item may be a plain string or an object {path, encoding?, offset?, limit?}. " +
+              "encoding decodes the file as 'utf8' | 'utf16le' | 'utf16be' | 'cp1252' (a matching BOM is stripped); without encoding the file's encoding is auto-detected (BOM FF FE -> utf16le, FE FF -> utf16be, EF BB BF -> utf8, otherwise strict UTF-8 -> utf8, else cp1252). " +
               "Only works within allowed directories.",
             inputSchema: zodToJsonSchema(ReadFilesArgsSchema) as ToolInput,
           },
@@ -124,7 +128,7 @@ export class FilesystemServer {
             description:
               "Create multiple new files in a single operation. Works on a single file too. " +
               "Fails if a file already exists unless its overwrite flag is true. " +
-              "Handles text content with UTF-8 encoding, or base64 content for binary files (encoding: \"base64\"). " +
+              "Handles text content with UTF-8 encoding (or a per-file textEncoding of 'utf8' | 'utf16le' | 'utf16be' | 'cp1252'; utf16le/utf16be write a BOM), or base64 content for binary files (encoding: \"base64\", which writes raw bytes and wins over textEncoding). " +
               "Parent directories are created as needed. " +
               "Partial failures won't stop the entire operation. " +
               "Only works within allowed directories.",
@@ -452,6 +456,16 @@ export class FilesystemServer {
               "Returns JSON text: {added:[{path,size}], removed:[{path,size}], changed:[{path,sizeA,sizeB,shaA,shaB,diff?}], counts:{added,removed,changed,identical,compared}, truncated}. " +
               "Only works within allowed directories.",
             inputSchema: zodToJsonSchema(DirDiffArgsSchema) as ToolInput,
+          },
+          {
+            name: "convert_encoding",
+            description:
+              "Convert a file's text encoding to a new file. " +
+              "Reads the source file (encoding auto-detected from its bytes unless `from` is given: BOM FF FE -> utf16le, FE FF -> utf16be, EF BB BF -> utf8, otherwise strict UTF-8 -> utf8, else cp1252), decodes it, and writes outPath encoded as `to` ('utf8' | 'utf16le' | 'utf16be' | 'cp1252'; utf16le/utf16be output includes a BOM, utf8/cp1252 do not). " +
+              "outPath must differ from path and must not already exist unless overwrite=true. " +
+              "Returns JSON text: {path, outPath, from (detected or given), to, bytesIn, bytesOut}. " +
+              "Only works within allowed directories.",
+            inputSchema: zodToJsonSchema(ConvertEncodingArgsSchema) as ToolInput,
           },
         ],
       };
@@ -1008,6 +1022,24 @@ export class FilesystemServer {
               parsed.data.dirB,
               parsed.data.ignore,
               parsed.data.maxFiles,
+              this.allowedDirectories
+            );
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "convert_encoding": {
+            const parsed = ConvertEncodingArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for convert_encoding: ${parsed.error}`);
+            }
+            const result = await handleConvertEncoding(
+              parsed.data.path,
+              parsed.data.to,
+              parsed.data.from,
+              parsed.data.outPath,
+              parsed.data.overwrite,
               this.allowedDirectories
             );
             return {

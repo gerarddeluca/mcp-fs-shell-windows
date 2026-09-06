@@ -1,17 +1,42 @@
 import fs from "fs/promises";
 import { validatePath } from "../helpers/path.js";
+import {
+  decodeText,
+  detectEncoding,
+  type TextEncoding,
+} from "../helpers/encoding.js";
+
+type ReadFileItem =
+  | string
+  | {
+      path: string;
+      encoding?: TextEncoding;
+      offset?: number;
+      limit?: number;
+    };
 
 export async function handleReadFiles(
-  filePaths: string[],
+  fileItems: ReadFileItem[],
   allowedDirectories: string[],
   offset?: number,
   limit?: number
 ): Promise<string> {
   const results = await Promise.all(
-    filePaths.map(async (filePath: string) => {
+    fileItems.map(async (item) => {
+      const filePath = typeof item === "string" ? item : item.path;
       try {
         const validPath = await validatePath(filePath, allowedDirectories);
-        const content = await fs.readFile(validPath, "utf-8");
+        const raw = await fs.readFile(validPath);
+
+        // Decode with the file's explicit encoding when given, otherwise
+        // auto-detect from the raw bytes (BOM, then strict UTF-8, else cp1252).
+        const encoding: TextEncoding =
+          (typeof item !== "string" && item.encoding) || detectEncoding(raw);
+        const content = decodeText(raw, encoding);
+
+        // Per-file offset/limit (object form) fall back to the global ones.
+        const effOffset = (typeof item !== "string" && item.offset) || offset;
+        const effLimit = (typeof item !== "string" && item.limit) || limit;
 
         // Split into lines, keeping original line numbers
         const lines = content.split("\n");
@@ -19,12 +44,12 @@ export async function handleReadFiles(
 
         let startLine = 1;
         let endLine = total;
-        if (offset !== undefined || limit !== undefined) {
-          startLine = offset ?? 1;
+        if (effOffset !== undefined || effLimit !== undefined) {
+          startLine = effOffset ?? 1;
           if (startLine > total) {
             throw new Error(`offset ${startLine} is beyond end of file (${total} lines)`);
           }
-          endLine = limit !== undefined ? Math.min(total, startLine + limit - 1) : total;
+          endLine = effLimit !== undefined ? Math.min(total, startLine + effLimit - 1) : total;
         }
 
         // Format content with line numbers
@@ -34,7 +59,7 @@ export async function handleReadFiles(
           .join("\n");
 
         const header =
-          offset !== undefined || limit !== undefined
+          effOffset !== undefined || effLimit !== undefined
             ? `${filePath}: [lines ${startLine}-${endLine} of ${total}]\n`
             : `${filePath}:\n`;
 

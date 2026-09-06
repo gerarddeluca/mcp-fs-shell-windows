@@ -1,9 +1,10 @@
 import fs from "fs/promises";
 import path from "path";
 import { validatePath, ensureDirectoryExists } from "../helpers/path.js";
+import { encodeText, type TextEncoding } from "../helpers/encoding.js";
 
 export async function handleWriteNewFiles(
-  files: Array<{ path: string; content: string; overwrite?: boolean; encoding?: "utf8" | "base64" }>,
+  files: Array<{ path: string; content: string; overwrite?: boolean; encoding?: "utf8" | "base64"; textEncoding?: TextEncoding }>,
   allowedDirectories: string[]
 ): Promise<string> {
   const results: string[] = [];
@@ -37,7 +38,9 @@ export async function handleWriteNewFiles(
         if (file.encoding === "base64") {
           await fs.writeFile(validPath, Buffer.from(file.content, "base64"));
         } else {
-          await fs.writeFile(validPath, file.content, "utf-8");
+          // textEncoding defaults to utf8 (byte-identical to the old behavior);
+          // base64 above already handled the raw-bytes case.
+          await fs.writeFile(validPath, encodeText(file.content, file.textEncoding ?? "utf8"));
         }
 
         results.push(`Successfully wrote to ${file.path}${file.overwrite ? " (overwritten)" : ""}`);
