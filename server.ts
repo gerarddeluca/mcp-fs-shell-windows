@@ -34,6 +34,7 @@ import { DeleteFilesByPatternArgsSchema } from "./delete_files_by_pattern/schema
 import { LaunchFileArgsSchema } from "./launch_file/schema.js";
 import { ReadBytesArgsSchema } from "./read_bytes/schema.js";
 import { WriteBytesArgsSchema } from "./write_bytes/schema.js";
+import { DirDiffArgsSchema } from "./dir_diff/schema.js";
 import { ShellRunArgsSchema } from "./shell/schema.js";
 import { ShellTestArgsSchema } from "./shell/schema.js";
 import { ShellStartArgsSchema } from "./shell/schema.js";
@@ -69,6 +70,7 @@ import { handleDeleteFilesByPattern } from "./delete_files_by_pattern/handler.js
 import { handleLaunchFile } from "./launch_file/handler.js";
 import { handleReadBytes } from "./read_bytes/handler.js";
 import { handleWriteBytes } from "./write_bytes/handler.js";
+import { handleDirDiff } from "./dir_diff/handler.js";
 import { handleShellRun } from "./shell/handler.js";
 import { handleShellTest } from "./shell/handler.js";
 import { handleShellStart } from "./shell/handler.js";
@@ -90,7 +92,7 @@ export class FilesystemServer {
     this.server = new Server(
       {
         name: "secure-filesystem-server",
-        version: "0.2.9",
+        version: "0.2.10",
       },
       {
         capabilities: {
@@ -436,6 +438,20 @@ export class FilesystemServer {
               "With extend=true the file is grown when the write ends past EOF, zero-filling any gap between the old size and the offset. " +
               "Only works within allowed directories.",
             inputSchema: zodToJsonSchema(WriteBytesArgsSchema) as ToolInput,
+          },
+          {
+            name: "dir_diff",
+            description:
+              "Recursively compare the contents of two directory trees (files only). " +
+              "Each relative path is classified as added (exists only in dirB), removed (exists only in dirA), " +
+              "changed (present in both, content differs - decided by size first, then sha256), or identical. " +
+              "For changed files where BOTH sides look like text (size <= 1 MiB and no NUL byte in the first 8 KiB), " +
+              "a unified diff is included (diff? field, same helper as file_diff/content_diff). " +
+              "ignore: array of glob patterns matched against each file's relative path (minimatch, same semantics as list_directory's ignore param); ignored paths are excluded from all lists and counts. " +
+              "maxFiles: cap on total files compared (union of both trees); if the union exceeds it, the comparison stops and truncated=true (counts reflect what was compared). " +
+              "Returns JSON text: {added:[{path,size}], removed:[{path,size}], changed:[{path,sizeA,sizeB,shaA,shaB,diff?}], counts:{added,removed,changed,identical,compared}, truncated}. " +
+              "Only works within allowed directories.",
+            inputSchema: zodToJsonSchema(DirDiffArgsSchema) as ToolInput,
           },
         ],
       };
@@ -975,6 +991,23 @@ export class FilesystemServer {
               parsed.data.offset,
               parsed.data.dataBase64,
               parsed.data.extend,
+              this.allowedDirectories
+            );
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "dir_diff": {
+            const parsed = DirDiffArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for dir_diff: ${parsed.error}`);
+            }
+            const result = await handleDirDiff(
+              parsed.data.dirA,
+              parsed.data.dirB,
+              parsed.data.ignore,
+              parsed.data.maxFiles,
               this.allowedDirectories
             );
             return {
