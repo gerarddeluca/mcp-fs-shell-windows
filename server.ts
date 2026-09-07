@@ -39,6 +39,7 @@ import { WriteBytesArgsSchema } from "./write_bytes/schema.js";
 import { DirDiffArgsSchema } from "./dir_diff/schema.js";
 import { ConvertEncodingArgsSchema } from "./convert_encoding/schema.js";
 import { WaitForFileArgsSchema } from "./wait_for_file/schema.js";
+import { CreateLinkArgsSchema } from "./create_link/schema.js";
 import { ShellRunArgsSchema } from "./shell/schema.js";
 import { ShellTestArgsSchema } from "./shell/schema.js";
 import { ShellStartArgsSchema } from "./shell/schema.js";
@@ -78,6 +79,7 @@ import { handleWriteBytes } from "./write_bytes/handler.js";
 import { handleDirDiff } from "./dir_diff/handler.js";
 import { handleConvertEncoding } from "./convert_encoding/handler.js";
 import { handleWaitForFile } from "./wait_for_file/handler.js";
+import { handleCreateLink } from "./create_link/handler.js";
 import { handleShellRun } from "./shell/handler.js";
 import { handleShellTest } from "./shell/handler.js";
 import { handleShellStart } from "./shell/handler.js";
@@ -99,7 +101,7 @@ export class FilesystemServer {
     this.server = new Server(
       {
         name: "secure-filesystem-server",
-        version: "0.2.17",
+        version: "0.2.18",
       },
       {
         capabilities: {
@@ -353,6 +355,20 @@ export class FilesystemServer {
               "Use with caution as the operation is permanent. " +
               "Only works within allowed directories.",
             inputSchema: zodToJsonSchema(DeleteFilesByPatternArgsSchema) as ToolInput,
+          },
+          {
+            name: "create_link",
+            description:
+              "Create a link object at linkPath pointing at target (Windows hardlink, directory junction, or file/directory symlink). " +
+              "type: 'auto' (default) | 'symlink' | 'junction' | 'hardlink'. " +
+              "target must exist (lstat-checked; clear error otherwise); linkPath must NOT already exist (clear error); linkPath's parent directory must already exist (clear error - it is NOT auto-created). " +
+              "'hardlink' creates a second name for an existing file (target must be a file; same volume - cross-volume errors surface naturally). " +
+              "'junction' creates a directory junction (Windows only; target must be a directory; clear error on non-Windows). " +
+              "'symlink'/'auto' create a real symlink based on the target's type: directory target -> directory symlink, file target -> file symlink; 'auto' never creates a junction (junctions must be explicit). " +
+              "Both paths go through the standard path validation and must be within allowed directories. " +
+              "Response is short text containing the user-supplied linkPath and target (never any \\\\?\\-prefixed form) plus the actual link type created. " +
+              "Only works within allowed directories.",
+            inputSchema: zodToJsonSchema(CreateLinkArgsSchema) as ToolInput,
           },
           {
             name: "transfer_files",
@@ -696,6 +712,24 @@ export class FilesystemServer {
             };
           }
 
+
+          case "create_link": {
+            const parsed = CreateLinkArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for create_link: ${parsed.error}`);
+            }
+
+            const result = await handleCreateLink(
+              parsed.data.target,
+              parsed.data.linkPath,
+              parsed.data.type,
+              this.allowedDirectories
+            );
+
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
 
           case "transfer_files": {
             const parsed = MoveFilesArgsSchema.safeParse(args);
