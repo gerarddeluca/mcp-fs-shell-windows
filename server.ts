@@ -98,7 +98,7 @@ export class FilesystemServer {
     this.server = new Server(
       {
         name: "secure-filesystem-server",
-        version: "0.2.14",
+        version: "0.2.15",
       },
       {
         capabilities: {
@@ -153,6 +153,7 @@ export class FilesystemServer {
             description:
               "Delete multiple files or directories in a single operation. Works on a single file too. " +
               "Set recursive flag to true to delete directories with contents. " +
+              "Reparse points (junctions/symlinks) are always removed as links without following them - the link target is never touched, including nested links inside recursively deleted directories. " +
               "Partial failures won't stop the entire operation. " +
               "Use with caution as operation is permanent. " +
               "Only works within allowed directories.",
@@ -191,7 +192,7 @@ export class FilesystemServer {
               "Each patch has an action: replace (default, replace lines startLine-endLine with newText), insertBefore (insert newText before startLine; startLine = total lines + 1 appends to the end), or delete (remove lines startLine-endLine). " +
               "All patches reference the original line numbers. " +
               "Shows git-style diffs for all changes (dryRun: true previews without writing). " +
-              "Note: files are written back with LF line endings. " +
+              "Preserves the file's dominant line ending (CRLF or LF). " +
               "Partial failures won't stop the entire operation. " +
               "Only works within allowed directories.",
             inputSchema: zodToJsonSchema(PatchFilesArgsSchema) as ToolInput,
@@ -209,10 +210,11 @@ export class FilesystemServer {
           {
             name: "list_directory",
             description:
-              "List directory contents with [FILE] or [DIR] prefixes (single level). " +
+              "List directory contents with [FILE], [DIR], or [LINK] prefixes (single level). " +
               "Entries are sorted by name and paginated with offset/limit (default limit 100). " +
               "File sizes are shown by default (includeSizes: false to omit). " +
               "Filter with type (files/directories/all) and ignore glob patterns. " +
+              "Reparse points (junctions/symlinks) show as [LINK] and are excluded from the files and directories filters (only listed with type 'all'); links are not stat'ed for size. " +
               "Use directory_tree for recursive views. " +
               "Only works within allowed directories.",
             inputSchema: zodToJsonSchema(ListDirectoryArgsSchema) as ToolInput,
@@ -223,6 +225,8 @@ export class FilesystemServer {
                 "Get a recursive tree view of files and directories as a JSON structure. " +
                 "Returns JSON with name, type, and children properties. " +
                 "Supports excluding files/directories using glob patterns. " +
+                "Reparse points (junctions/symlinks) appear as type 'link' with no children and are never recursed into. " +
+                "Empty directories are included. " +
                 "Only works within allowed directories.",
             inputSchema: zodToJsonSchema(DirectoryTreeArgsSchema) as ToolInput,
           },
@@ -303,7 +307,7 @@ export class FilesystemServer {
             name: "get_file_info",
             description:
               "Get detailed file/directory metadata. " +
-              "Returns size, creation time, modified time, access time, type, and permissions. " +
+              "Returns size, creation time, modified time, access time, type, permissions, isReparsePoint, and (on Windows) NTFS attributes. " +
               "Only works within allowed directories.",
             inputSchema: zodToJsonSchema(GetFileInfoArgsSchema) as ToolInput,
           },

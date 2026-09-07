@@ -5,7 +5,7 @@ import { validatePath } from "../helpers/path.js";
 
 export interface TreeEntry {
   name: string;
-  type: 'file' | 'directory';
+  type: 'file' | 'directory' | 'link';
   children?: TreeEntry[];
 }
 
@@ -47,18 +47,17 @@ export async function buildDirectoryTree(
       continue;
     }
     
+    // Links (junctions/symlinks) are reported as type 'link' and never
+    // recursed into, so their targets are never traversed.
     const entryData: TreeEntry = {
       name: entry.name,
-      type: entry.isDirectory() ? 'directory' : 'file'
+      type: entry.isSymbolicLink() ? 'link' : entry.isDirectory() ? 'directory' : 'file'
     };
 
     if (entry.isDirectory()) {
+      // Empty directories stay in the tree (children: []) - only EXCLUDED
+      // entries are skipped.
       entryData.children = await buildDirectoryTree(entryPath, rootPath, excludePatterns, allowedDirectories);
-      
-      // Skip empty directories after exclusion
-      if (entryData.children.length === 0) {
-        continue;
-      }
     }
 
     result.push(entryData);

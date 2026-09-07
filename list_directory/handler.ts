@@ -16,8 +16,13 @@ export async function handleListDirectory(
   const entries = await fs.readdir(validPath, { withFileTypes: true });
 
   let filtered = entries.filter((entry) => {
-    if (type === "files" && !entry.isFile()) return false;
-    if (type === "directories" && !entry.isDirectory()) return false;
+    if (entry.isSymbolicLink()) {
+      // Links (junctions/symlinks) are only listed with type "all"
+      if (type !== "all") return false;
+    } else {
+      if (type === "files" && !entry.isFile()) return false;
+      if (type === "directories" && !entry.isDirectory()) return false;
+    }
     return !ignore.some((pattern) => minimatch(entry.name, pattern, { dot: true }));
   });
 
@@ -46,7 +51,9 @@ export async function handleListDirectory(
         sizeText = "";
       }
     }
-    lines.push(`${entry.isDirectory() ? "[DIR]" : "[FILE]"} ${entry.name}${sizeText}`);
+    lines.push(
+      `${entry.isSymbolicLink() ? "[LINK]" : entry.isDirectory() ? "[DIR]" : "[FILE]"} ${entry.name}${sizeText}`
+    );
   }
 
   const end = start + shown.length;
