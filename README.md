@@ -12,14 +12,14 @@ Heavily extended fork of [fabienvauchelles/mcp-filesystem-extended](https://gith
 |---|---|
 | Official base | `@modelcontextprotocol/server-filesystem` (Anthropic, PBC; MIT) |
 | Base fork | [fabienvauchelles/mcp-filesystem-extended](https://github.com/fabienvauchelles/mcp-filesystem-extended) @ `b6c317a` (MIT) |
-| This fork | v0.2.1 tool parity + `transfer_files` rename, robustness patches, 8 shell tools (v0.2.2), verbatim argv (v0.2.4), `launch_file` launcher (v0.2.7) — see [Differences](#differences-from-the-base-fork) |
+| This fork | v0.2.1 tool parity + `transfer_files` rename, robustness patches, 8 shell tools (v0.2.2), verbatim argv (v0.2.4), `launch_file` launcher (v0.2.7), raw-byte access + `dir_diff` + text encodings (v0.2.9–v0.2.11), `wait_for_file` (v0.2.12), `replace_regex` (v0.2.14), reparse-point & long-path hardening (v0.2.15–v0.2.16), Recycle-Bin deletes (v0.2.17), `create_link` (v0.2.18) — see [Differences](#differences-from-the-base-fork) |
 
 ## Features
 
-- **23 filesystem tools** — batched read/write/append/delete, move/copy, line-number patching, search (name / glob / regex / fuzzy), tree, counts, checksums, diffs, exact-match text editing. Confined to the allowed directories passed on the command line.
+- **30 filesystem tools** — batched read/write/append/delete (including raw-byte access, per-file text encodings, Recycle-Bin deletes, and link creation), move/copy, line-number patching, search (name / glob / regex / fuzzy / wait-for-file), in-place regex replacement, tree, counts, checksums, file and directory diffs, exact-match text editing. Confined to the allowed directories passed on the command line.
 - **8 shell tools** — synchronous, background, and interactive command execution implemented *inside the MCP server process*: no client-side permission toggles, survives client restarts, works with any MCP client.
 - **1 launcher tool** (`launch_file`, Windows-only) — opens files, folders, and http(s) links in their OS default app, fully detached: returns the moment the opener is spawned (never waits for the app), no console window, no stdio inheritance; filesystem targets are confined to the allowed directories.
-- **Windows-first** — drive roots, UNC roots, `cmd.exe /d /c` with verbatim argv, whole-process-tree kills (`taskkill /T /F`), detached interactive console windows.
+- **Windows-first** — drive roots, UNC roots, long paths beyond the 260-char `MAX_PATH` limit, `cmd.exe /d /c` with verbatim argv, whole-process-tree kills (`taskkill /T /F`), detached interactive console windows.
 - **NAS-safe startup** — an allowed directory that is missing or offline (e.g., a powered-down network share) logs a warning and the server continues instead of exiting.
 
 ## Requirements
@@ -65,22 +65,22 @@ node dist\index.js <allowed-dir> [more-dirs...]
 
 Then point your MCP config at `node <path-to-repo>\dist\index.js` with the allowed directories as the remaining args (same shape as the npx example above).
 
-### Filesystem tools (23)
+### Filesystem tools (30)
 
 | Tool | Purpose |
 |---|---|
-| `read_files` | Read one or more files, line-numbered; `offset`/`limit` paging |
-| `write_new_files` | Create files (per-file `overwrite`, optional `base64` encoding) |
+| `read_files` | Read one or more files, line-numbered; `offset`/`limit` paging; per-file `encoding` (utf8/utf16le/utf16be/cp1252, auto-detected when omitted) |
+| `write_new_files` | Create files (per-file `overwrite`, `textEncoding` utf8/utf16le/utf16be/cp1252, optional `base64` for binary) |
 | `append_files` | Append to files (creates them if missing) |
-| `delete_files` | Delete files/directories (`recursive`, `toRecycleBin` - Windows: send to Recycle Bin instead of permanent delete) |
+| `delete_files` | Delete files/directories (`recursive`; junctions/symlinks are removed as links, never followed; `toRecycleBin` - Windows: send to Recycle Bin instead of permanent delete) |
 | `copy_file` | Copy files/directories (`recursive`, `overwrite`) |
 | `transfer_files` | Move/rename items (`overwrite`, creates parent dirs) |
 | `patch_files` | Patch by line ranges (`replace`/`insertBefore`/`delete`, `dryRun`, git-diff output) |
 | `create_directories` | Create directory paths (nested chains) |
-| `list_directory` | Single-level listing (sizes, pagination, type filter, ignore globs) |
-| `directory_tree` | Recursive tree view (JSON) with exclusion patterns |
+| `list_directory` | Single-level listing ([FILE]/[DIR]/[LINK] prefixes, sizes, pagination, type filter, ignore globs) |
+| `directory_tree` | Recursive tree view (JSON) with exclusion patterns; includes empty dirs and link nodes |
 | `search_files` | Recursive case-insensitive name-substring search |
-| `search_regex` | Content grep over a single file or directory tree (paged) |
+| `search_regex` | Content grep over a single file or directory tree (paged; total + per-file match counts, `countOnly` mode) |
 | `search_glob` | Glob-based file search (e.g. `**/*.ts`, paged) |
 | `fuzzy_find_files` | Typo-tolerant name/path search (Levenshtein) |
 | `delete_files_by_pattern` | Regex delete within a single directory |
@@ -89,8 +89,15 @@ Then point your MCP config at `node <path-to-repo>\dist\index.js` with the allow
 | `content_diff` | Unified diff of two strings |
 | `checksum_files` | md5/sha1/sha256/sha512 for files |
 | `checksum_files_verif` | Verify files against expected hashes |
-| `get_file_info` | Size, timestamps, type, permissions |
-| `edit_files` | Exact-match text replacement, EOL-tolerant |
+| `get_file_info` | Size, timestamps, type, permissions, `isReparsePoint`, (Windows) NTFS attributes |
+| `edit_files` | Exact-match text replacement, EOL-tolerant (dominant line ending preserved) |
+| `read_bytes` | Read raw bytes at (offset, length) as base64 JSON — any binary file, any size |
+| `write_bytes` | Write raw bytes (base64) into an existing file at an offset — in place, or `extend` past EOF (gap zero-filled) |
+| `replace_regex` | In-place regex replacement across one or more files; `dryRun` defaults to true (unified-diff preview); preserves dominant line endings |
+| `dir_diff` | Recursive two-directory comparison (added/removed/changed/identical; unified diff for changed text files; `ignore` globs, `maxFiles` cap) |
+| `convert_encoding` | Convert a file's text encoding (utf8/utf16le/utf16be/cp1252, source auto-detected) to a new file |
+| `wait_for_file` | Poll until at least one file matching a glob appears under a directory (configurable timeout/interval) |
+| `create_link` | Create a hardlink, directory junction, or file/directory symlink to an existing target (`auto`/`symlink`/`junction`/`hardlink`) |
 | `list_allowed_directories` | List the allowed root directories |
 
 ### Shell tools (8, Windows-only)
@@ -148,6 +155,28 @@ The filesystem tools work in the image; the shell tools require a Windows host w
 **v0.2.4 — verbatim argv:** `windowsVerbatimArguments` + `/d` on all user-command spawns (run/test/start and the terminal launcher).
 
 **v0.2.7 — `launch_file`:** the detached OS launcher (see above). Renamed from a local `open_file` prototype so it cannot collide with other servers' `open_file` tools. Hardened: spawn-failure returns an error (the handler awaits the child's `spawn`/`error` events — it never reports success for a process Windows refused to create), URLs are restricted to http(s) so `file:` URIs cannot bypass the allowed-root policy, and non-Windows platforms fail with a clear error.
+
+**v0.2.8 — line-ending preservation:** `patch_files` and `edit_files` preserve the file's dominant line ending (CRLF or LF) on write.
+
+**v0.2.9 — `read_bytes` / `write_bytes`:** raw binary access at (offset, length) — base64 reads from any part of a file (any size, e.g. GGUFs and blobs) and in-place byte writes into existing files (`extend: true` grows the file past EOF, zero-filling the gap).
+
+**v0.2.10 — `dir_diff`:** recursive comparison of two directory trees — added/removed/changed/identical, unified diffs for changed text files, `ignore` glob patterns, and a `maxFiles` cap.
+
+**v0.2.11 — text encoding support:** per-file `encoding` in `read_files` (utf8/utf16le/utf16be/cp1252, auto-detected from BOMs when omitted), `textEncoding` in `write_new_files`, and `convert_encoding` to transcode a file into a new encoding.
+
+**v0.2.12 — `wait_for_file`:** polling file watcher — waits (up to `timeoutMs`, default 30 s, max 300 s) until at least one file matching a glob appears under a directory.
+
+**v0.2.13 — `search_regex` match totals:** every pattern occurrence is counted (a line matching N times counts N); responses end with the total and per-file counts, and `countOnly: true` returns counts without the matching line text.
+
+**v0.2.14 — `replace_regex`:** in-place regex replacement across one or more files (directories are rejected). `dryRun` defaults to `true` with a unified-diff preview; applied replacements preserve each file's dominant line ending; a missing path or invalid regex errors without writing anything.
+
+**v0.2.15 — reparse-point safety:** junctions/symlinks are never followed. `delete_files` removes them as links (including nested links inside recursive deletes) without touching their targets; `list_directory` shows `[LINK]` entries; `directory_tree` reports link nodes and includes empty directories; `get_file_info` adds `isReparsePoint` and (on Windows) NTFS attributes.
+
+**v0.2.16 — long-path support:** paths beyond the 260-char `MAX_PATH` limit work on Windows via `\\?\` extended-length form (drive and UNC), transparent to callers.
+
+**v0.2.17 — `delete_files` `toRecycleBin`:** send deletes to the Windows Recycle Bin instead of permanent removal. Reparse points are still removed as links (the bin cannot hold them), and any path that cannot be recycled is reported as an error — never silently hard-deleted.
+
+**v0.2.18 — `create_link`:** create hardlinks, directory junctions, and file/directory symlinks (`type: auto | symlink | junction | hardlink`) with strict checks: the target must exist, the link path must not, and the link path's parent must exist.
 
 ## Security
 
