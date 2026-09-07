@@ -18,15 +18,17 @@ export async function handleSearchRegex(
   maxResults: number,
   caseSensitive: boolean,
   offset: number,
-  allowedDirectories: string[]
+  allowedDirectories: string[],
+  countOnly: boolean
 ): Promise<string> {
   // Validate root path (may be a directory or a single file)
   const validRootPath = await validatePath(searchPath, allowedDirectories);
 
   const results: SearchResult[] = [];
+  const perFileCounts = new Map<string, number>();
+  const filesSearchedList: string[] = [];
   let filesSearched = 0;
-  let matchesFound = 0;
-  let searchAborted = false;
+  let totalMatches = 0;
   const effectiveCap = offset - 1 + maxResults;
 
   // Create regex pattern
@@ -40,45 +42,46 @@ export async function handleSearchRegex(
   }
 
   async function scanFile(fullPath: string) {
-    if (searchAborted) return;
-
     try {
       filesSearched++;
+      filesSearchedList.push(fullPath);
       const content = await fs.readFile(fullPath, "utf-8");
       const lines = content.split("\n");
 
       regex.lastIndex = 0;
       let match: RegExpExecArray | null;
 
+      // Every occurrence is counted (a line containing the pattern 4 times
+      // counts as 4 matches). Line results are collected only while under the
+      // pagination cap; counting always runs to completion so the reported
+      // total is exact.
       while ((match = regex.exec(content)) !== null) {
-        matchesFound++;
+        totalMatches++;
+        perFileCounts.set(fullPath, (perFileCounts.get(fullPath) ?? 0) + 1);
 
-        // Find the line number for this match
-        const matchPosition = match.index;
-        let lineNumber = 0;
-        let charCount = 0;
+        if (!countOnly && results.length < effectiveCap) {
+          // Find the line number for this match
+          const matchPosition = match.index;
+          let lineNumber = 0;
+          let charCount = 0;
 
-        for (let i = 0; i < lines.length; i++) {
-          charCount += lines[i].length + 1; // +1 for the newline
-          if (charCount > matchPosition) {
-            lineNumber = i + 1;
-            break;
+          for (let i = 0; i < lines.length; i++) {
+            charCount += lines[i].length + 1; // +1 for the newline
+            if (charCount > matchPosition) {
+              lineNumber = i + 1;
+              break;
+            }
           }
-        }
 
-        // Get the line content
-        const lineContent = lines[lineNumber - 1]?.trim() || "";
+          // Get the line content
+          const lineContent = lines[lineNumber - 1]?.trim() || "";
 
-        results.push({
-          file: fullPath,
-          line: lineNumber,
-          content: lineContent,
-          match: match[0],
-        });
-
-        if (results.length >= effectiveCap) {
-          searchAborted = true;
-          break;
+          results.push({
+            file: fullPath,
+            line: lineNumber,
+            content: lineContent,
+            match: match[0],
+          });
         }
 
         // Guard against zero-length matches (e.g. pattern "a*") looping forever
@@ -92,14 +95,10 @@ export async function handleSearchRegex(
   }
 
   async function searchDirectory(dirPath: string) {
-    if (searchAborted) return;
-
     try {
       const entries = await fs.readdir(dirPath, { withFileTypes: true });
 
       for (const entry of entries) {
-        if (searchAborted) break;
-
         const fullPath = path.join(dirPath, entry.name);
 
         try {
@@ -156,21 +155,43 @@ export async function handleSearchRegex(
     await searchDirectory(validRootPath);
   }
 
+  // Total-match summary (always included), with per-file counts for the
+  // files that contain at least one match, in first-match (walk) order.
+  const matchedFileEntries = [...perFileCounts.entries()];
+  const matchedFilesCount = matchedFileEntries.length;
+  let matchedFilesList = "";
+  for (const [file, count] of matchedFileEntries) {
+    matchedFilesList += `  ${file}: ${count}\n`;
+  }
+  const totalLine = `Total matches: ${totalMatches} (${matchedFilesCount} files)\n`;
+
   // Format the results
   let output = "";
-  const shown = results.slice(offset - 1);
+  const shown = countOnly ? [] : results.slice(offset - 1);
 
-  if (matchesFound === 0) {
+  if (countOnly) {
+    // Counts only: total header, files searched, then a per-file count line
+    // for EVERY searched file (0 for files with no matches).
+    output = totalLine;
+    output += `Searched ${filesSearched} files\n`;
+    if (totalMatches > 0) {
+      output += "\n";
+      for (const file of filesSearchedList) {
+        output += `  ${file}: ${perFileCounts.get(file) ?? 0}\n`;
+      }
+    }
+  } else if (totalMatches === 0) {
     output = `No matches found for regex: ${pattern}\n`;
     output += `Searched ${filesSearched} files\n`;
+    output += totalLine;
   } else if (shown.length === 0) {
-    output = `Found ${matchesFound} matches in ${results.length} locations (offset ${offset} is beyond the collected range)\n`;
+    output = `Found ${totalMatches} matches in ${results.length} locations (offset ${offset} is beyond the collected range)\n`;
+    output += "\n";
+    output += totalLine;
+    output += matchedFilesList;
   } else {
     const end = offset + shown.length - 1;
-    output = `Found ${matchesFound} matches in ${results.length} locations (showing ${offset}-${end})`;
-    if (searchAborted) {
-      output += ` (search stopped at ${effectiveCap} collected matches)`;
-    }
+    output = `Found ${totalMatches} matches in ${results.length} locations (showing ${offset}-${end})`;
     output += "\n\n";
 
     // Group by file for more readable output
@@ -192,6 +213,9 @@ export async function handleSearchRegex(
 
       output += "\n";
     }
+
+    output += totalLine;
+    output += matchedFilesList;
   }
 
   return output;

@@ -96,7 +96,7 @@ export class FilesystemServer {
     this.server = new Server(
       {
         name: "secure-filesystem-server",
-        version: "0.2.12",
+        version: "0.2.13",
       },
       {
         capabilities: {
@@ -241,6 +241,9 @@ export class FilesystemServer {
               "path can be a directory (recursively searched) or a single file. " +
               "Supports filtering files by patterns. " +
               "Returns matching lines with line numbers, paginated with offset/maxResults (default 100). " +
+              "Each occurrence of the pattern is counted (a line matching 4 times counts as 4), and the response " +
+              "always ends with the total match count plus per-file counts. " +
+              "Set countOnly=true to return only per-file match counts and the total, with no matching line text. " +
               "Only searches within allowed directories.",
             inputSchema: zodToJsonSchema(SearchRegexArgsSchema) as ToolInput,
           },
@@ -724,7 +727,8 @@ export class FilesystemServer {
               parsed.data.maxResults,
               parsed.data.caseSensitive,
               parsed.data.offset,
-              this.allowedDirectories
+              this.allowedDirectories,
+              parsed.data.countOnly
             );
             
             return {

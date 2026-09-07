@@ -8,4 +8,5 @@ export const SearchRegexArgsSchema = z.object({
   maxResults: z.number().optional().default(100).describe("Maximum number of results to return"),
   offset: z.number().int().min(1).optional().default(1).describe("1-indexed match number to start from. Default: 1."),
   caseSensitive: z.boolean().optional().default(false).describe("Whether the search should be case-sensitive"),
+  countOnly: z.boolean().optional().default(false).describe("When true, return only per-file match counts and the total (no matching line text). Default: false."),
 });
