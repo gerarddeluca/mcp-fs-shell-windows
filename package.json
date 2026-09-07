@@ -1,6 +1,6 @@
 {
   "name": "mcp-fs-shell-windows",
-  "version": "0.2.11",
+  "version": "0.2.12",
   "description": "MCP filesystem server: batched file tools + standalone Windows shell tools (extended fork)",
   "license": "MIT",
   "author": "Gerard DeLuca",

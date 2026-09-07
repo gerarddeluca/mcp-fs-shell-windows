@@ -36,6 +36,7 @@ import { ReadBytesArgsSchema } from "./read_bytes/schema.js";
 import { WriteBytesArgsSchema } from "./write_bytes/schema.js";
 import { DirDiffArgsSchema } from "./dir_diff/schema.js";
 import { ConvertEncodingArgsSchema } from "./convert_encoding/schema.js";
+import { WaitForFileArgsSchema } from "./wait_for_file/schema.js";
 import { ShellRunArgsSchema } from "./shell/schema.js";
 import { ShellTestArgsSchema } from "./shell/schema.js";
 import { ShellStartArgsSchema } from "./shell/schema.js";
@@ -73,6 +74,7 @@ import { handleReadBytes } from "./read_bytes/handler.js";
 import { handleWriteBytes } from "./write_bytes/handler.js";
 import { handleDirDiff } from "./dir_diff/handler.js";
 import { handleConvertEncoding } from "./convert_encoding/handler.js";
+import { handleWaitForFile } from "./wait_for_file/handler.js";
 import { handleShellRun } from "./shell/handler.js";
 import { handleShellTest } from "./shell/handler.js";
 import { handleShellStart } from "./shell/handler.js";
@@ -94,7 +96,7 @@ export class FilesystemServer {
     this.server = new Server(
       {
         name: "secure-filesystem-server",
-        version: "0.2.11",
+        version: "0.2.12",
       },
       {
         capabilities: {
@@ -466,6 +468,20 @@ export class FilesystemServer {
               "Returns JSON text: {path, outPath, from (detected or given), to, bytesIn, bytesOut}. " +
               "Only works within allowed directories.",
             inputSchema: zodToJsonSchema(ConvertEncodingArgsSchema) as ToolInput,
+          },
+          {
+            name: "wait_for_file",
+            description:
+              "Wait until at least one file matching a glob appears under a base directory (polling watcher). " +
+              "path = base directory (must be inside an allowed root); the glob is matched against each file's path relative to path " +
+              "(same glob machinery as search_glob: minimatch with dot:true; on Windows backslashes in the pattern are treated as path separators). " +
+              "timeoutMs defaults to 30000 (max 300000); intervalMs defaults to 500 (min 100). " +
+              "Polls with an async sleep between scans so the server thread is never blocked for longer than one interval; the tool call itself may legitimately take up to timeoutMs. " +
+              "As soon as at least one file matches it returns JSON text: {matched: [absolute paths], count, waitedMs, timedOut: false}; " +
+              "on timeout it returns the same shape with timedOut: true (matched may be empty). " +
+              "Only files are matched (directories are searched through, not matched). " +
+              "Only works within allowed directories.",
+            inputSchema: zodToJsonSchema(WaitForFileArgsSchema) as ToolInput,
           },
         ],
       };
@@ -1040,6 +1056,23 @@ export class FilesystemServer {
               parsed.data.from,
               parsed.data.outPath,
               parsed.data.overwrite,
+              this.allowedDirectories
+            );
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "wait_for_file": {
+            const parsed = WaitForFileArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for wait_for_file: ${parsed.error}`);
+            }
+            const result = await handleWaitForFile(
+              parsed.data.path,
+              parsed.data.glob,
+              parsed.data.timeoutMs,
+              parsed.data.intervalMs,
               this.allowedDirectories
             );
             return {
