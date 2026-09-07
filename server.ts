@@ -99,7 +99,7 @@ export class FilesystemServer {
     this.server = new Server(
       {
         name: "secure-filesystem-server",
-        version: "0.2.16",
+        version: "0.2.17",
       },
       {
         capabilities: {
@@ -155,8 +155,9 @@ export class FilesystemServer {
               "Delete multiple files or directories in a single operation. Works on a single file too. " +
               "Set recursive flag to true to delete directories with contents. " +
               "Reparse points (junctions/symlinks) are always removed as links without following them - the link target is never touched, including nested links inside recursively deleted directories. " +
+              "Set toRecycleBin to true (Windows only) to send files and directories to the Recycle Bin instead of deleting permanently; reparse points are still removed as links (the bin cannot hold links), and any path that cannot be recycled is reported as an error and never permanently deleted as a fallback. " +
               "Partial failures won't stop the entire operation. " +
-              "Use with caution as operation is permanent. " +
+              "Use with caution as the default operation is permanent. " +
               "Only works within allowed directories.",
             inputSchema: zodToJsonSchema(DeleteFilesArgsSchema) as ToolInput,
           },
@@ -564,7 +565,8 @@ export class FilesystemServer {
             const result = await handleDeleteFiles(
               parsed.data.paths,
               parsed.data.recursive,
-              this.allowedDirectories
+              this.allowedDirectories,
+              parsed.data.toRecycleBin
             );
             
             return {

@@ -72,7 +72,7 @@ Then point your MCP config at `node <path-to-repo>\dist\index.js` with the allow
 | `read_files` | Read one or more files, line-numbered; `offset`/`limit` paging |
 | `write_new_files` | Create files (per-file `overwrite`, optional `base64` encoding) |
 | `append_files` | Append to files (creates them if missing) |
-| `delete_files` | Delete files/directories (`recursive`) |
+| `delete_files` | Delete files/directories (`recursive`, `toRecycleBin` - Windows: send to Recycle Bin instead of permanent delete) |
 | `copy_file` | Copy files/directories (`recursive`, `overwrite`) |
 | `transfer_files` | Move/rename items (`overwrite`, creates parent dirs) |
 | `patch_files` | Patch by line ranges (`replace`/`insertBefore`/`delete`, `dryRun`, git-diff output) |
