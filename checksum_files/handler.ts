@@ -1,4 +1,4 @@
-import { validatePath } from "../helpers/path.js";
+import { validatePath, stripLongPathAll } from "../helpers/path.js";
 import { calculateFileHash, HashAlgorithm } from "../helpers/checksum.js";
 
 export async function handleChecksumFiles(
@@ -20,7 +20,7 @@ export async function handleChecksumFiles(
         
         results.push({ path: filePath, hash });
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorMessage = stripLongPathAll(error instanceof Error ? error.message : String(error));
         errors.push({ path: filePath, error: errorMessage });
       }
     })

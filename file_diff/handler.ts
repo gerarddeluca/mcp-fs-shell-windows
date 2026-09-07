@@ -1,5 +1,5 @@
 import fs from "fs/promises";
-import { validatePath } from "../helpers/path.js";
+import { validatePath, stripLongPathAll } from "../helpers/path.js";
 import { createUnifiedDiff } from "../helpers/diff.js";
 
 export async function handleFileDiff(
@@ -32,7 +32,7 @@ export async function handleFileDiff(
     
     return formattedDiff;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorMessage = stripLongPathAll(error instanceof Error ? error.message : String(error));
     throw new Error(`Error comparing files: ${errorMessage}`);
   }
 }

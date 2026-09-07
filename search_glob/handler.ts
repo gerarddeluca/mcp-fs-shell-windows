@@ -1,6 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
-import { validatePath } from "../helpers/path.js";
+import { validatePath, stripLongPath } from "../helpers/path.js";
 import { minimatch } from "minimatch";
 
 export async function handleSearchGlob(
@@ -90,7 +90,7 @@ export async function handleSearchGlob(
     output += "\n\n";
 
     for (const result of shown) {
-      output += `${result}\n`;
+      output += `${stripLongPath(result)}\n`;
     }
   }
 

@@ -1,4 +1,4 @@
-import { validatePath } from "../helpers/path.js";
+import { validatePath, stripLongPathAll } from "../helpers/path.js";
 import { applyFilePatches, PatchOptions, PatchEntry } from "./helpers.js";
 
 export async function handlePatchFiles(
@@ -24,7 +24,7 @@ export async function handlePatchFiles(
 
         results.push(`File: ${file.path}\n${result}`);
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorMessage = stripLongPathAll(error instanceof Error ? error.message : String(error));
         errors.push(`Failed to patch ${file.path}: ${errorMessage}`);
       }
     })

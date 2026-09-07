@@ -1,7 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { spawn, type ChildProcess } from "child_process";
-import { validatePath } from "../helpers/path.js";
+import { validatePath, stripLongPath } from "../helpers/path.js";
 
 /**
  * Launch a file, directory, or web link in its Windows-associated
@@ -145,11 +145,13 @@ export async function handleLaunchFile(
   try {
     stats = await fs.stat(resolved);
   } catch {
-    throw new Error(`Cannot launch: path does not exist: ${resolved}`);
+    throw new Error(`Cannot launch: path does not exist: ${stripLongPath(resolved)}`);
   }
 
   try {
-    await launchDetached(opener, resolved);
+    // The opener (shell) receives the plain path: Windows shell APIs handle
+    // long paths themselves, while the \\?\ form can break association lookup.
+    await launchDetached(opener, stripLongPath(resolved));
   } catch (err) {
     throw new Error(`Failed to launch target: ${errorMessage(err)}`);
   }
@@ -157,7 +159,7 @@ export async function handleLaunchFile(
   return JSON.stringify({
     target: trimmed,
     kind: stats.isDirectory() ? "directory" : "file",
-    resolved,
+    resolved: stripLongPath(resolved),
     dispatched: true,
   });
 }

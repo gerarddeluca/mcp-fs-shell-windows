@@ -1,6 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
-import { validatePath } from "../helpers/path.js";
+import { validatePath, stripLongPath } from "../helpers/path.js";
 
 function levenshtein(a: string, b: string): number {
   if (a === b) return 0;
@@ -85,7 +85,7 @@ export async function handleFuzzyFindFiles(
 
   let output = `Top ${top.length} fuzzy matches for "${query}" (scanned ${scanned} entries${truncated ? ", stopped at scan limit" : ""}):\n`;
   top.forEach((c, i) => {
-    output += `${i + 1}. (distance ${c.distance}) ${c.path}\n`;
+    output += `${i + 1}. (distance ${c.distance}) ${stripLongPath(c.path)}\n`;
   });
   return output;
 }

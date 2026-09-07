@@ -1,6 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
-import { validatePath, ensureDirectoryExists } from "../helpers/path.js";
+import { validatePath, ensureDirectoryExists, stripLongPathAll } from "../helpers/path.js";
 
 export async function handleAppendFiles(
   files: Array<{path: string, content: string}>, 
@@ -23,7 +23,7 @@ export async function handleAppendFiles(
         
         results.push(`Successfully appended to ${file.path}`);
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorMessage = stripLongPathAll(error instanceof Error ? error.message : String(error));
         errors.push(`Failed to append to file ${file.path}: ${errorMessage}`);
       }
     })

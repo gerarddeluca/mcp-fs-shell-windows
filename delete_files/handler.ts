@@ -1,6 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
-import { validatePathPreservingLinks } from "../helpers/path.js";
+import { validatePathPreservingLinks, stripLongPath, stripLongPathAll } from "../helpers/path.js";
 
 // Best-effort unlink that retries after clearing read-only flags, so plain
 // directory trees delete as completely as fs.rm(..., { force: true }) did.
@@ -35,13 +35,19 @@ async function rmRealDirectory(dir: string, errors: string[]): Promise<void> {
         await unlinkEntry(fullPath);
       }
     } catch (error) {
-      errors.push(fullPath + ": " + (error instanceof Error ? error.message : String(error)));
+      errors.push(
+        stripLongPath(fullPath) +
+          ": " +
+          stripLongPathAll(error instanceof Error ? error.message : String(error))
+      );
     }
   }
   try {
     await fs.rmdir(dir);
   } catch (error) {
-    errors.push(dir + ": " + (error instanceof Error ? error.message : String(error)));
+    errors.push(
+      stripLongPath(dir) + ": " + stripLongPathAll(error instanceof Error ? error.message : String(error))
+    );
   }
 }
 
@@ -87,7 +93,7 @@ export async function handleDeleteFiles(
           results.push(`Successfully deleted file: ${filePath}`);
         }
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorMessage = stripLongPathAll(error instanceof Error ? error.message : String(error));
         errors.push(`Failed to delete ${filePath}: ${errorMessage}`);
       }
     })

@@ -1,5 +1,5 @@
 import fs from "fs/promises";
-import { validatePath } from "../helpers/path.js";
+import { validatePath, stripLongPathAll } from "../helpers/path.js";
 
 interface EditSpec {
   path: string;
@@ -56,7 +56,7 @@ export async function handleEditFiles(files: EditSpec[], allowedDirectories: str
       await fs.writeFile(validPath, fromLf(current, eol), "utf-8");
       results.push(`File: ${file.path}\n${editLog.join("\n")}`);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage = stripLongPathAll(error instanceof Error ? error.message : String(error));
       errors.push(`Failed to edit ${file.path}: ${errorMessage}`);
     }
   }

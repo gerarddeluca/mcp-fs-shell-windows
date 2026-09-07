@@ -1,5 +1,5 @@
 import fs from "fs/promises";
-import { validatePath } from "../helpers/path.js";
+import { validatePath, stripLongPathAll } from "../helpers/path.js";
 import {
   decodeText,
   detectEncoding,
@@ -65,7 +65,7 @@ export async function handleReadFiles(
 
         return `${header}${numberedContent}\n`;
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorMessage = stripLongPathAll(error instanceof Error ? error.message : String(error));
         return `${filePath}: Error - ${errorMessage}`;
       }
     }),

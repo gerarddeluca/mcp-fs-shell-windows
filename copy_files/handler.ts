@@ -1,6 +1,6 @@
 import fs from "fs/promises";
 import {copyDir} from "./helpers.js";
-import {validatePath, ensureDirectoryExists} from "../helpers/path.js";
+import {validatePath, ensureDirectoryExists, stripLongPathAll} from "../helpers/path.js";
 
 export async function handleCopyFile(
   sourcePath: string,
@@ -46,7 +46,7 @@ export async function handleCopyFile(
       return `Successfully copied file ${sourcePath} to ${destinationPath}`;
     }
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorMessage = stripLongPathAll(error instanceof Error ? error.message : String(error));
     throw new Error(`Error copying ${sourcePath} to ${destinationPath}: ${errorMessage}`);
   }
 }

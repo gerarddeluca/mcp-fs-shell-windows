@@ -7,6 +7,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
+import { stripLongPathAll } from "./helpers/path.js";
 
 // Import all schemas
 import { ReadFilesArgsSchema } from "./read_files/schema.js";
@@ -98,7 +99,7 @@ export class FilesystemServer {
     this.server = new Server(
       {
         name: "secure-filesystem-server",
-        version: "0.2.15",
+        version: "0.2.16",
       },
       {
         capabilities: {
@@ -1126,7 +1127,8 @@ export class FilesystemServer {
             throw new Error(`Unknown tool: ${name}`);
         }
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        // Never surface the internal \\?\ long-path prefix in error text.
+        const errorMessage = stripLongPathAll(error instanceof Error ? error.message : String(error));
         return {
           content: [{ type: "text", text: `Error: ${errorMessage}` }],
           isError: true,

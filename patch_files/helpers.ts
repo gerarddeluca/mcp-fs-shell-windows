@@ -1,5 +1,6 @@
 import fs from "fs/promises";
 import { createUnifiedDiff, normalizeLineEndings } from "../helpers/diff.js";
+import { stripLongPath } from "../helpers/path.js";
 
 // Detect the dominant line ending of the raw file content so it can be
 // restored on write (mirrors the edit_files approach). CRLF is chosen only
@@ -136,7 +137,7 @@ export async function applyFilePatches(
   const modifiedContent = modifiedContentLines.join("\n");
 
   // Create unified diff
-  const diff = createUnifiedDiff(content, modifiedContent, filePath, filePath);
+  const diff = createUnifiedDiff(content, modifiedContent, stripLongPath(filePath), stripLongPath(filePath));
 
   // Format diff with appropriate number of backticks
   let numBackticks = 3;

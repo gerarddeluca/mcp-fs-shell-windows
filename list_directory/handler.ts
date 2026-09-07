@@ -1,6 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
-import { validatePath } from "../helpers/path.js";
+import { validatePath, stripLongPath } from "../helpers/path.js";
 import { minimatch } from "minimatch";
 
 export async function handleListDirectory(
@@ -31,10 +31,10 @@ export async function handleListDirectory(
 
   const total = filtered.length;
   if (total === 0) {
-    return `No entries in ${validPath}`;
+    return `No entries in ${stripLongPath(validPath)}`;
   }
   if (offset > total) {
-    return `No entries in ${validPath} (offset ${offset} is beyond ${total} entries)`;
+    return `No entries in ${stripLongPath(validPath)} (offset ${offset} is beyond ${total} entries)`;
   }
 
   const start = offset - 1;
@@ -57,5 +57,5 @@ export async function handleListDirectory(
   }
 
   const end = start + shown.length;
-  return `Showing ${offset}-${end} of ${total} entries in ${validPath}\n` + lines.join("\n");
+  return `Showing ${offset}-${end} of ${total} entries in ${stripLongPath(validPath)}\n` + lines.join("\n");
 }

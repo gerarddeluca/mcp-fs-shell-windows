@@ -1,6 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
-import { validatePath } from "../helpers/path.js";
+import { validatePath, stripLongPath } from "../helpers/path.js";
 import { minimatch } from "minimatch";
 
 interface FileLineCount {
@@ -77,9 +77,9 @@ export async function handleCountLines(
       }
       
       if (pattern) {
-        output += `${file.file}: ${file.count} lines total, ${file.matchingCount} matching lines\n`;
+        output += `${stripLongPath(file.file)}: ${file.count} lines total, ${file.matchingCount} matching lines\n`;
       } else {
-        output += `${file.file}: ${file.count} lines\n`;
+        output += `${stripLongPath(file.file)}: ${file.count} lines\n`;
       }
     }
     

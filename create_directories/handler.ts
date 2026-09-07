@@ -1,5 +1,5 @@
 import fs from "fs/promises";
-import { validatePath } from "../helpers/path.js";
+import { validatePath, stripLongPathAll } from "../helpers/path.js";
 
 export async function handleCreateDirectories(
   paths: string[],
@@ -19,7 +19,7 @@ export async function handleCreateDirectories(
         
         results.push(`Successfully created directory: ${dirPath}`);
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorMessage = stripLongPathAll(error instanceof Error ? error.message : String(error));
         errors.push(`Failed to create directory ${dirPath}: ${errorMessage}`);
       }
     })

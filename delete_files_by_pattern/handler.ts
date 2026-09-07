@@ -1,6 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
-import { validatePath } from "../helpers/path.js";
+import { validatePath, stripLongPath, stripLongPathAll } from "../helpers/path.js";
 
 export async function handleDeleteFilesByPattern(
   directory: string,
@@ -29,21 +29,21 @@ export async function handleDeleteFilesByPattern(
       if (entry.isDirectory()) {
         if (includeDirectories) {
           await fs.rm(fullPath, { recursive: true, force: true });
-          deleted.push(`${fullPath} (directory)`);
+          deleted.push(`${stripLongPath(fullPath)} (directory)`);
         } else {
-          skipped.push(`${fullPath} (directory; set includeDirectories: true to delete)`);
+          skipped.push(`${stripLongPath(fullPath)} (directory; set includeDirectories: true to delete)`);
         }
       } else {
         await fs.unlink(fullPath);
-        deleted.push(fullPath);
+        deleted.push(stripLongPath(fullPath));
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      skipped.push(`${fullPath} (${errorMessage})`);
+      const errorMessage = stripLongPathAll(error instanceof Error ? error.message : String(error));
+      skipped.push(`${stripLongPath(fullPath)} (${errorMessage})`);
     }
   }
 
-  let output = `Pattern "${pattern}" in ${validPath}:\n`;
+  let output = `Pattern "${pattern}" in ${stripLongPath(validPath)}:\n`;
   output += `- ${deleted.length} deleted\n`;
   if (skipped.length > 0) {
     output += `- ${skipped.length} skipped:\n` + skipped.map((s) => `  ${s}`).join("\n");

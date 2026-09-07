@@ -1,4 +1,4 @@
-import { validatePath } from "../helpers/path.js";
+import { validatePath, stripLongPath } from "../helpers/path.js";
 import { searchFiles } from "./helpers.js";
 
 export async function handleSearchFiles(
@@ -28,5 +28,5 @@ export async function handleSearchFiles(
 
   const end = offset + shown.length - 1;
   const totalText = stopped ? `at least ${results.length}` : `${results.length}`;
-  return `Found ${totalText} files matching "${pattern}" (showing ${offset}-${end})\n\n` + shown.join("\n");
+  return `Found ${totalText} files matching "${pattern}" (showing ${offset}-${end})\n\n` + shown.map(stripLongPath).join("\n");
 }

@@ -1,6 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
-import { validatePath, ensureDirectoryExists } from "../helpers/path.js";
+import { validatePath, ensureDirectoryExists, stripLongPathAll } from "../helpers/path.js";
 import { encodeText, type TextEncoding } from "../helpers/encoding.js";
 
 export async function handleWriteNewFiles(
@@ -45,7 +45,7 @@ export async function handleWriteNewFiles(
 
         results.push(`Successfully wrote to ${file.path}${file.overwrite ? " (overwritten)" : ""}`);
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorMessage = stripLongPathAll(error instanceof Error ? error.message : String(error));
         errors.push(`Failed to write file ${file.path}: ${errorMessage}`);
       }
     })

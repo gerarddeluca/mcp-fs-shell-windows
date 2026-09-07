@@ -1,7 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { minimatch } from "minimatch";
-import { validatePath } from "../helpers/path.js";
+import { validatePath, stripLongPath } from "../helpers/path.js";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -33,7 +33,7 @@ async function scanForMatches(root: string, pattern: string): Promise<string[]> 
         // Normalize separators to '/' so minimatch matching is platform-consistent.
         const relativePath = path.relative(root, fullPath).split(path.sep).join("/");
         if (minimatch(relativePath, pattern, { dot: true })) {
-          results.push(fullPath);
+          results.push(stripLongPath(fullPath));
         }
       } catch {
         // Skip anything that errors (e.g. raced with a deletion)

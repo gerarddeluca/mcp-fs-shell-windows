@@ -1,6 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
-import { validatePath, ensureDirectoryExists } from "../helpers/path.js";
+import { validatePath, ensureDirectoryExists, stripLongPathAll } from "../helpers/path.js";
 
 export async function handleMoveFiles(
   items: Array<{source: string, destination: string}>,
@@ -57,7 +57,7 @@ export async function handleMoveFiles(
         await fs.rename(validSource, validDestination);
         results.push(`Successfully moved ${item.source} to ${item.destination}`);
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorMessage = stripLongPathAll(error instanceof Error ? error.message : String(error));
         errors.push(`Failed to move ${item.source} to ${item.destination}: ${errorMessage}`);
       }
     })

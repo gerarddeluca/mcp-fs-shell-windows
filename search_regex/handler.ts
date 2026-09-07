@@ -1,6 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
-import { validatePath } from "../helpers/path.js";
+import { validatePath, stripLongPath } from "../helpers/path.js";
 import { minimatch } from "minimatch";
 
 interface SearchResult {
@@ -161,7 +161,7 @@ export async function handleSearchRegex(
   const matchedFilesCount = matchedFileEntries.length;
   let matchedFilesList = "";
   for (const [file, count] of matchedFileEntries) {
-    matchedFilesList += `  ${file}: ${count}\n`;
+    matchedFilesList += `  ${stripLongPath(file)}: ${count}\n`;
   }
   const totalLine = `Total matches: ${totalMatches} (${matchedFilesCount} files)\n`;
 
@@ -177,7 +177,7 @@ export async function handleSearchRegex(
     if (totalMatches > 0) {
       output += "\n";
       for (const file of filesSearchedList) {
-        output += `  ${file}: ${perFileCounts.get(file) ?? 0}\n`;
+        output += `  ${stripLongPath(file)}: ${perFileCounts.get(file) ?? 0}\n`;
       }
     }
   } else if (totalMatches === 0) {
@@ -205,7 +205,7 @@ export async function handleSearchRegex(
     }
 
     for (const [file, fileResults] of fileGroups.entries()) {
-      output += `File: ${file}\n`;
+      output += `File: ${stripLongPath(file)}\n`;
 
       for (const result of fileResults) {
         output += `  Line ${result.line}: ${result.content}\n`;
