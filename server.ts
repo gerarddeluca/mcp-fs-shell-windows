@@ -23,6 +23,7 @@ import { ListDirectoryArgsSchema } from "./list_directory/schema.js";
 import { DirectoryTreeArgsSchema } from "./directory_tree/schema.js";
 import { SearchFilesArgsSchema } from "./search_files/schema.js";
 import { SearchRegexArgsSchema } from "./search_regex/schema.js";
+import { ReplaceRegexArgsSchema } from "./replace_regex/schema.js";
 import { SearchGlobArgsSchema } from "./search_glob/schema.js";
 import { CountLinesArgsSchema } from "./count_lines/schema.js";
 import { ChecksumFilesArgsSchema } from "./checksum_files/schema.js";
@@ -61,6 +62,7 @@ import { handleListDirectory } from "./list_directory/handler.js";
 import { handleDirectoryTree } from "./directory_tree/handler.js";
 import { handleSearchFiles } from "./search_files/handler.js";
 import { handleSearchRegex } from "./search_regex/handler.js";
+import { handleReplaceRegex } from "./replace_regex/handler.js";
 import { handleSearchGlob } from "./search_glob/handler.js";
 import { handleCountLines } from "./count_lines/handler.js";
 import { handleChecksumFiles } from "./checksum_files/handler.js";
@@ -96,7 +98,7 @@ export class FilesystemServer {
     this.server = new Server(
       {
         name: "secure-filesystem-server",
-        version: "0.2.13",
+        version: "0.2.14",
       },
       {
         capabilities: {
@@ -246,6 +248,18 @@ export class FilesystemServer {
               "Set countOnly=true to return only per-file match counts and the total, with no matching line text. " +
               "Only searches within allowed directories.",
             inputSchema: zodToJsonSchema(SearchRegexArgsSchema) as ToolInput,
+          },
+          {
+            name: "replace_regex",
+            description:
+              "In-place regular expression replacement across the given FILES. " +
+              "paths may list one or many files (directories are NOT accepted - a directory path is an error and nothing is written). " +
+              "The 'g' (global) flag is always applied so every match is replaced; additional flags such as 'i' are allowed. " +
+              "dryRun defaults to TRUE: it returns per-file match counts and a unified diff preview of the WOULD-BE change without writing anything. " +
+              "With dryRun=false the replacements are applied in place, preserving each file's dominant line ending (a pure-CRLF file stays fully CRLF), and per-file match counts plus a total are returned. " +
+              "Any missing path or an invalid regex produces a clear error and writes nothing. " +
+              "Only works within allowed directories.",
+            inputSchema: zodToJsonSchema(ReplaceRegexArgsSchema) as ToolInput,
           },
           {
             name: "search_glob",
@@ -736,6 +750,26 @@ export class FilesystemServer {
             };
           }
           
+          case "replace_regex": {
+            const parsed = ReplaceRegexArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for replace_regex: ${parsed.error}`);
+            }
+
+            const result = await handleReplaceRegex(
+              parsed.data.paths,
+              parsed.data.pattern,
+              parsed.data.replacement,
+              parsed.data.flags,
+              parsed.data.dryRun,
+              this.allowedDirectories
+            );
+
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
           case "search_glob": {
             const parsed = SearchGlobArgsSchema.safeParse(args);
             if (!parsed.success) {

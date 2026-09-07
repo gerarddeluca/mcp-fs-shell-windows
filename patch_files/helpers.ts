@@ -6,14 +6,14 @@ import { createUnifiedDiff, normalizeLineEndings } from "../helpers/diff.js";
 // when it is the strict majority of the file's newlines; otherwise the file
 // is treated as LF (also the outcome for a CRLF/LF tie, matching the
 // previous LF-normalizing default).
-function detectDominantEol(text: string): string {
+export function detectDominantEol(text: string): string {
   const crlf = (text.match(/\r\n/g) || []).length;
   const others = (text.replace(/\r\n/g, "").match(/[\r\n]/g) || []).length;
   return crlf > others ? "\r\n" : "\n";
 }
 
 // Re-apply the dominant line ending to LF-normalized content (no-op for LF).
-function fromLf(text: string, eol: string): string {
+export function fromLf(text: string, eol: string): string {
   return eol === "\n" ? text : text.replace(/\n/g, eol);
 }
 
