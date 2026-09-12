@@ -12,12 +12,13 @@ Heavily extended fork of [fabienvauchelles/mcp-filesystem-extended](https://gith
 |---|---|
 | Official base | `@modelcontextprotocol/server-filesystem` (Anthropic, PBC; MIT) |
 | Base fork | [fabienvauchelles/mcp-filesystem-extended](https://github.com/fabienvauchelles/mcp-filesystem-extended) @ `b6c317a` (MIT) |
-| This fork | v0.2.1 tool parity + `transfer_files` rename, robustness patches, 8 shell tools (v0.2.2), verbatim argv (v0.2.4), `launch_file` launcher (v0.2.7), raw-byte access + `dir_diff` + text encodings (v0.2.9–v0.2.11), `wait_for_file` (v0.2.12), `replace_regex` (v0.2.14), reparse-point & long-path hardening (v0.2.15–v0.2.16), Recycle-Bin deletes (v0.2.17), `create_link` (v0.2.18) — see [Differences](#differences-from-the-base-fork) |
+| This fork | v0.2.1 tool parity + `transfer_files` rename, robustness patches, 8 shell tools (v0.2.2), verbatim argv (v0.2.4), `launch_file` launcher (v0.2.7), raw-byte access + `dir_diff` + text encodings (v0.2.9–v0.2.11), `wait_for_file` (v0.2.12), `replace_regex` (v0.2.14), reparse-point & long-path hardening (v0.2.15–v0.2.16), Recycle-Bin deletes (v0.2.17), `create_link` (v0.2.18), `run_javascript_free` unrestricted code execution (v0.2.20) — see [Differences](#differences-from-the-base-fork) |
 
 ## Features
 
 - **30 filesystem tools** — batched read/write/append/delete (including raw-byte access, per-file text encodings, Recycle-Bin deletes, and link creation), move/copy, line-number patching, search (name / glob / regex / fuzzy / wait-for-file), in-place regex replacement, tree, counts, checksums, file and directory diffs, exact-match text editing. Confined to the allowed directories passed on the command line.
 - **8 shell tools** — synchronous, background, and interactive command execution implemented *inside the MCP server process*: no client-side permission toggles, survives client restarts, works with any MCP client.
+- **1 code-execution tool** (`run_javascript_free`) — run a JavaScript/TypeScript snippet on the Deno runtime with **unrestricted** permissions (full filesystem, network, env, child processes, arbitrary imports): the "free" counterpart to sandboxed `run_javascript` tools that confine code to a working directory.
 - **1 launcher tool** (`launch_file`, Windows-only) — opens files, folders, and http(s) links in their OS default app, fully detached: returns the moment the opener is spawned (never waits for the app), no console window, no stdio inheritance; filesystem targets are confined to the allowed directories.
 - **Windows-first** — drive roots, UNC roots, long paths beyond the 260-char `MAX_PATH` limit, `cmd.exe /d /c` with verbatim argv, whole-process-tree kills (`taskkill /T /F`), detached interactive console windows.
 - **NAS-safe startup** — an allowed directory that is missing or offline (e.g., a powered-down network share) logs a warning and the server continues instead of exiting.
@@ -27,6 +28,7 @@ Heavily extended fork of [fabienvauchelles/mcp-filesystem-extended](https://gith
 - Node.js >= 20 (developed and tested on Node 22).
 - Windows for the shell tools (they spawn `cmd.exe`, `taskkill`, and `powershell`). The filesystem tools work on any platform Node runs on.
 - `shell_python` requires Python on the system PATH.
+- `run_javascript_free` requires a Deno runtime: the `$DENO_PATH` env var, LM Studio's bundled binary (`<home>/.internal/utils/deno(.exe)` — auto-located by walking up from the server CWD or the user home), or `deno` on the PATH.
 
 ## Quick start (npm)
 
@@ -121,6 +123,12 @@ Practical notes:
 - `timeout /t` can fail when stdin is not an interactive console — use `ping -n N 127.0.0.1 >nul` for sleeps.
 - Synchronous calls are bounded (max 28 s) so they cannot wedge the MCP request channel; anything longer should go through `shell_start`.
 
+### Code-execution tool (1)
+
+| Tool | Purpose |
+|---|---|
+| `run_javascript_free` | Run a JS/TS snippet on the Deno runtime with **unrestricted permissions**: full filesystem read/write (any drive or UNC path the server user can reach), network, environment, child processes, and arbitrary imports (`node:*`, `npm:*`, `https:*`). Temp `.ts` file + `deno run --allow-read --allow-write --allow-net --allow-env --allow-sys --allow-run --allow-ffi --allow-import`. Default 5 s timeout, max 60 s; optional `cwd` (defaults to the `shell_cwd` default). Non-zero exit or timeout returns an error that still includes the captured stdout/stderr (100 KB / 20 KB caps). The Deno binary is located via `$DENO_PATH` → `<ancestor>/.internal/utils/deno(.exe)` (walk-up) → `<home>/.lmstudio/.internal/utils/deno(.exe)` → PATH. |
+
 ### Launcher tool (1, Windows-only)
 
 | Tool | Purpose |
@@ -178,11 +186,14 @@ The filesystem tools work in the image; the shell tools require a Windows host w
 
 **v0.2.18 — `create_link`:** create hardlinks, directory junctions, and file/directory symlinks (`type: auto | symlink | junction | hardlink`) with strict checks: the target must exist, the link path must not, and the link path's parent must exist.
 
+**v0.2.20 — `run_javascript_free`:** unrestricted JS/TS code execution on the Deno runtime — full filesystem, network, env, child-process, and import permissions (no working-directory sandbox). Reuses the shell layer's spawn/capture machinery (temp `.ts` in the shell-jobs dir, whole-tree kill on timeout, 100 KB / 20 KB output caps). The Deno binary is auto-located (`$DENO_PATH` → LM Studio's bundled `.internal/utils/deno(.exe)` via CWD walk-up or user home → PATH); missing binary yields a clear error. Default 5 s timeout, max 60 s.
+
 ## Security
 
 - The filesystem tools are confined to the allowed directories passed at startup (and their subtrees).
 - The shell tools are **not** confined: anything the server process's user can execute will run, including against reachable network shares. Grant this server the same trust you would grant an unsandboxed shell.
 - `launch_file` targets are confined to the allowed directories (for paths), but the opened application runs with the full rights of the server user — like anything you double-click.
+- `run_javascript_free` is **not** confined: the snippet runs as an unsandboxed Deno process with the full rights of the server user (filesystem, network, processes). Grant this server the same trust you would grant an unsandboxed shell.
 - The server communicates over stdio and opens no network endpoints of its own.
 
 ## License

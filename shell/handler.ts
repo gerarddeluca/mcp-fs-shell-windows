@@ -57,13 +57,13 @@ try {
 }
 
 /** Keep only the last `max` chars; mark truncation. */
-function cap(text: string, max: number): string {
+export function cap(text: string, max: number): string {
   if (text.length <= max) return text;
   return `...[truncated] ` + text.slice(-max);
 }
 
-const CAP_OK = 100000; // cap for stdout/stderr in success payloads
-const CAP_ERR = 20000; // cap for output embedded in error messages
+export const CAP_OK = 100000; // cap for stdout/stderr in success payloads
+export const CAP_ERR = 20000; // cap for output embedded in error messages
 const TAIL = 262144; // per-stream in-memory job tail (256 KB)
 
 function newJobId(): string {
@@ -71,7 +71,7 @@ function newJobId(): string {
 }
 
 /** Resolve the effective working directory (param override or module default) and validate it. */
-async function resolveCwd(cwd?: string): Promise<string> {
+export async function resolveCwd(cwd?: string): Promise<string> {
   const abs = cwd ? nodePath.resolve(cwd) : defaultShellCwd;
   const st = await fsp.stat(abs).catch(() => null);
   if (!st || !st.isDirectory()) {
@@ -212,7 +212,7 @@ function makeLineFeeder(logStream: fs.WriteStream): {
   return { feed, flush };
 }
 
-async function ensureJobsDir(): Promise<void> {
+export async function ensureJobsDir(): Promise<void> {
   await fsp.mkdir(SHELL_JOBS_DIR, { recursive: true }).catch(() => undefined);
 }
 
@@ -228,7 +228,7 @@ interface CaptureResult {
  * Spawn a process, capture stdout/stderr (utf-8), enforce a timeout via killTree.
  * Resolves (never rejects) with the outcome; spawn failures are reported in spawnError.
  */
-async function runCaptured(
+export async function runCaptured(
   exe: string,
   args: string[],
   opts: { cwd: string; input?: string; timeoutMs: number; env?: NodeJS.ProcessEnv; verbatim?: boolean },

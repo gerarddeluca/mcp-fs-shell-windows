@@ -48,6 +48,7 @@ import { ShellCancelArgsSchema } from "./shell/schema.js";
 import { ShellTerminalArgsSchema } from "./shell/schema.js";
 import { ShellPythonArgsSchema } from "./shell/schema.js";
 import { ShellCwdArgsSchema } from "./shell/schema.js";
+import { RunJavascriptFreeArgsSchema } from "./run_javascript/schema.js";
 
 // Import all handlers
 import { handleReadFiles } from "./read_files/handler.js";
@@ -88,6 +89,7 @@ import { handleShellCancel } from "./shell/handler.js";
 import { handleShellTerminal } from "./shell/handler.js";
 import { handleShellPython } from "./shell/handler.js";
 import { handleShellCwd } from "./shell/handler.js";
+import { handleRunJavascriptFree } from "./run_javascript/handler.js";
 const ToolInputSchema = ToolSchema.shape.inputSchema;
 type ToolInput = z.infer<typeof ToolInputSchema>;
 
@@ -101,7 +103,7 @@ export class FilesystemServer {
     this.server = new Server(
       {
         name: "secure-filesystem-server",
-        version: "0.2.19",
+        version: "0.2.20",
       },
       {
         capabilities: {
@@ -521,6 +523,16 @@ export class FilesystemServer {
               "Only files are matched (directories are searched through, not matched). " +
               "Only works within allowed directories.",
             inputSchema: zodToJsonSchema(WaitForFileArgsSchema) as ToolInput,
+          },
+          {
+            name: "run_javascript_free",
+            description:
+              "Run a JavaScript/TypeScript code snippet on the Deno runtime with UNRESTRICTED permissions: full filesystem read/write (any drive or UNC path the server user can reach), network access, environment variables, child processes, and arbitrary imports (node:*, npm:*, https:*) - unlike the other run_javascript tools, there is no working-directory sandbox. " +
+              "The code is written to a temp .ts file and run; returns exit code, stdout, and stderr. " +
+              "Default 5 s timeout, max 60 s; optional cwd (defaults to the shell_cwd default). " +
+              "Non-zero exit or timeout returns an error that still includes the captured output. " +
+              "Requires a Deno binary: $DENO_PATH, <LM Studio home>/.internal/utils/deno(.exe) (found by walking up from the server CWD or the user home), or deno on PATH.",
+            inputSchema: zodToJsonSchema(RunJavascriptFreeArgsSchema) as ToolInput,
           },
         ],
       };
@@ -1153,6 +1165,21 @@ export class FilesystemServer {
               parsed.data.timeoutMs,
               parsed.data.intervalMs,
               this.allowedDirectories
+            );
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "run_javascript_free": {
+            const parsed = RunJavascriptFreeArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for run_javascript_free: ${parsed.error}`);
+            }
+            const result = await handleRunJavascriptFree(
+              parsed.data.javascript,
+              parsed.data.timeout_seconds,
+              parsed.data.cwd
             );
             return {
               content: [{ type: "text", text: result }],
