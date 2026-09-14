@@ -72,6 +72,11 @@ import { PreviewHtmlArgsSchema } from "./system/schema.js";
 import { ReadDocumentArgsSchema } from "./read_document/schema.js";
 import { QueryDatabaseArgsSchema } from "./query_database/schema.js";
 import { AnalyzeProjectArgsSchema } from "./analyze_project/schema.js";
+import {
+  WebSearchArgsSchema,
+  FetchWebContentArgsSchema,
+  WikipediaSearchArgsSchema,
+} from "./web/schema.js";
 
 // Import all handlers
 import { handleReadFiles } from "./read_files/handler.js";
@@ -136,6 +141,11 @@ import { handlePreviewHtml } from "./system/handler.js";
 import { handleReadDocument } from "./read_document/handler.js";
 import { handleQueryDatabase } from "./query_database/handler.js";
 import { handleAnalyzeProject } from "./analyze_project/handler.js";
+import {
+  handleWebSearch,
+  handleFetchWebContent,
+  handleWikipediaSearch,
+} from "./web/handler.js";
 const ToolInputSchema = ToolSchema.shape.inputSchema;
 type ToolInput = z.infer<typeof ToolInputSchema>;
 
@@ -149,7 +159,7 @@ export class FilesystemServer {
     this.server = new Server(
       {
         name: "secure-filesystem-server",
-        version: "0.2.24",
+        version: "0.2.25",
       },
       {
         capabilities: {
@@ -793,6 +803,35 @@ export class FilesystemServer {
               "No detection returns the error 'Could not detect a supported linter (ESLint script or Python).' " +
               "Spawns with shell:true and a 60 s timeout; returns JSON text: {tool, type, report} (report = stdout+stderr capped at 10000 chars), or {error}.",
             inputSchema: zodToJsonSchema(AnalyzeProjectArgsSchema) as ToolInput,
+          },
+          {
+            name: "web_search",
+            description:
+              "Search the web using multiple providers (DuckDuckGo, Google, Bing). " +
+              "Uses no-key, no-Chrome providers first, then browser providers as fallback. " +
+              "Default fallback chain (when providers is omitted): duckduckgo-fetch -> duckduckgo-api -> duckduckgo-html -> google -> bing; the chain stops at the first provider that returns results. " +
+              "When providers is given, each listed provider is tried in order and errors are collected per provider (not fatal). " +
+              "Browser-based providers (duckduckgo-html, google, bing) use puppeteer-core with the local Chrome-for-Testing build and are skipped in chain mode once Chrome is detected unavailable. " +
+              "Returns JSON text: {results: [{title, link, snippet, provider}], meta: {total_found, providers_used, no_api_key_required, trace}} or, when every provider fails, {error: 'All attempted search providers failed.', attempts: [...], trace: [...]}. " +
+              "Results are deduplicated by link.",
+            inputSchema: zodToJsonSchema(WebSearchArgsSchema) as ToolInput,
+          },
+          {
+            name: "fetch_web_content",
+            description:
+              "Fetch the clean, text-based content of a webpage URL. " +
+              "Fetches the URL, extracts the <title> when present, converts the HTML to plain text via html-to-text (wordwrap off, anchor hrefs ignored, images skipped), and truncates the content to 40000 chars (' (truncated)' marker when cut). " +
+              "Returns JSON text: {url, status, title?, content} or {error: 'Failed to fetch URL: ...'}.",
+            inputSchema: zodToJsonSchema(FetchWebContentArgsSchema) as ToolInput,
+          },
+          {
+            name: "wikipedia_search",
+            description:
+              "Search Wikipedia for a given query and return page summaries. " +
+              "Uses the MediaWiki API: list=search (top 3), then prop=extracts exintro explaintext per pageid; each summary is truncated to 2000 chars and each url is built from the page title. " +
+              "lang (optional): language code, default 'en'. " +
+              "Returns JSON text: {results: [{title, summary, url}]}, {results: 'No Wikipedia articles found.'}, or {error: 'Wikipedia search failed: ...'}.",
+            inputSchema: zodToJsonSchema(WikipediaSearchArgsSchema) as ToolInput,
           },
         ],
       };
@@ -1707,6 +1746,39 @@ export class FilesystemServer {
               throw new Error(`Invalid arguments for analyze_project: ${parsed.error}`);
             }
             const result = await handleAnalyzeProject();
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "web_search": {
+            const parsed = WebSearchArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for web_search: ${parsed.error}`);
+            }
+            const result = await handleWebSearch(parsed.data.query, parsed.data.providers);
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "fetch_web_content": {
+            const parsed = FetchWebContentArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for fetch_web_content: ${parsed.error}`);
+            }
+            const result = await handleFetchWebContent(parsed.data.url);
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "wikipedia_search": {
+            const parsed = WikipediaSearchArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for wikipedia_search: ${parsed.error}`);
+            }
+            const result = await handleWikipediaSearch(parsed.data.query, parsed.data.lang);
             return {
               content: [{ type: "text", text: result }],
             };
