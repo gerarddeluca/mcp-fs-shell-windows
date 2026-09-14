@@ -69,6 +69,9 @@ import { WriteClipboardArgsSchema } from "./system/schema.js";
 import { SendNotificationArgsSchema } from "./system/schema.js";
 import { OpenFileArgsSchema } from "./system/schema.js";
 import { PreviewHtmlArgsSchema } from "./system/schema.js";
+import { ReadDocumentArgsSchema } from "./read_document/schema.js";
+import { QueryDatabaseArgsSchema } from "./query_database/schema.js";
+import { AnalyzeProjectArgsSchema } from "./analyze_project/schema.js";
 
 // Import all handlers
 import { handleReadFiles } from "./read_files/handler.js";
@@ -130,6 +133,9 @@ import { handleWriteClipboard } from "./system/handler.js";
 import { handleSendNotification } from "./system/handler.js";
 import { handleOpenFile } from "./system/handler.js";
 import { handlePreviewHtml } from "./system/handler.js";
+import { handleReadDocument } from "./read_document/handler.js";
+import { handleQueryDatabase } from "./query_database/handler.js";
+import { handleAnalyzeProject } from "./analyze_project/handler.js";
 const ToolInputSchema = ToolSchema.shape.inputSchema;
 type ToolInput = z.infer<typeof ToolInputSchema>;
 
@@ -143,7 +149,7 @@ export class FilesystemServer {
     this.server = new Server(
       {
         name: "secure-filesystem-server",
-        version: "0.2.23",
+        version: "0.2.24",
       },
       {
         capabilities: {
@@ -754,6 +760,39 @@ export class FilesystemServer {
               "The temp file is written, launched in the default browser (same detached opener as launch_file), and left on disk. " +
               "Returns JSON text: {success: true, path, message} with the temp file path.",
             inputSchema: zodToJsonSchema(PreviewHtmlArgsSchema) as ToolInput,
+          },
+          {
+            name: "read_document",
+            description:
+              "Read content from PDF or DOCX files. " +
+              "PDF via pdf-parse v2 class-based API (new PDFParse({data}), getText/getInfo/destroy) returning JSON text: {content, metadata}; " +
+              "DOCX via mammoth extractRawText returning {content, messages}. " +
+              "Unsupported extensions return the error 'Unsupported document format. Use read_file for text files.' " +
+              "Other failures are wrapped as {error: 'Failed to read document: ...'}. " +
+              "Only works within allowed directories.",
+            inputSchema: zodToJsonSchema(ReadDocumentArgsSchema) as ToolInput,
+          },
+          {
+            name: "query_database",
+            description:
+              "Execute a read-only query on a SQLite database file. " +
+              "Implemented on Node's built-in node:sqlite (DatabaseSync opened with readOnly: true) - no native dependency. " +
+              "Write statements (INSERT/UPDATE/DELETE/DROP/ALTER/CREATE/REPLACE) are blocked up-front with the error 'Only SELECT/read queries are allowed for safety.' " +
+              "Returns JSON text: {results} (array of row objects from prepare().all()), or {error: 'Database query failed: ...'}. " +
+              "Only works within allowed directories.",
+            inputSchema: zodToJsonSchema(QueryDatabaseArgsSchema) as ToolInput,
+          },
+          {
+            name: "analyze_project",
+            description:
+              "Run project-wide analysis (linting) to find errors and warnings. " +
+              "Operates in the current working directory (the shell_cwd default CWD). " +
+              "Detection ladder: if package.json has scripts.lint -> 'npm run lint' (type npm-script); " +
+              "else if eslint is in (dev)dependencies -> 'npx eslint . --format json' (type eslint); " +
+              "else if any .py file is present (only when package.json is absent/unreadable) -> 'pylint .' (type python-lint). " +
+              "No detection returns the error 'Could not detect a supported linter (ESLint script or Python).' " +
+              "Spawns with shell:true and a 60 s timeout; returns JSON text: {tool, type, report} (report = stdout+stderr capped at 10000 chars), or {error}.",
+            inputSchema: zodToJsonSchema(AnalyzeProjectArgsSchema) as ToolInput,
           },
         ],
       };
@@ -1635,6 +1674,39 @@ export class FilesystemServer {
               throw new Error(`Invalid arguments for preview_html: ${parsed.error}`);
             }
             const result = await handlePreviewHtml(parsed.data.html_content, parsed.data.file_name);
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "read_document": {
+            const parsed = ReadDocumentArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for read_document: ${parsed.error}`);
+            }
+            const result = await handleReadDocument(parsed.data.file_path, this.allowedDirectories);
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "query_database": {
+            const parsed = QueryDatabaseArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for query_database: ${parsed.error}`);
+            }
+            const result = await handleQueryDatabase(parsed.data.db_path, parsed.data.query, this.allowedDirectories);
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "analyze_project": {
+            const parsed = AnalyzeProjectArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for analyze_project: ${parsed.error}`);
+            }
+            const result = await handleAnalyzeProject();
             return {
               content: [{ type: "text", text: result }],
             };

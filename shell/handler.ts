@@ -38,6 +38,15 @@ export interface ShellJob {
 const jobs = new Map<string, ShellJob>();
 let defaultShellCwd = process.cwd();
 
+/**
+ * The shell_cwd default working directory. Exposed for tools that operate on
+ * "the working directory" as their context (fork equivalent of the
+ * Beledarian plugin's currentWorkingDirectory), e.g. analyze_project.
+ */
+export function getDefaultShellCwd(): string {
+  return defaultShellCwd;
+}
+
 // Best-effort startup cleanup: drop job log files older than 24 h.
 try {
   const entries = fs.readdirSync(SHELL_JOBS_DIR);
