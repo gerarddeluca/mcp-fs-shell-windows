@@ -55,6 +55,14 @@ import { GitCommitArgsSchema } from "./git/schema.js";
 import { GitLogArgsSchema } from "./git/schema.js";
 import { GitAddArgsSchema } from "./git/schema.js";
 import { GitCheckoutArgsSchema } from "./git/schema.js";
+import { GhAuthArgsSchema } from "./gh/schema.js";
+import { GhCreateIssueArgsSchema } from "./gh/schema.js";
+import { GhListIssuesArgsSchema } from "./gh/schema.js";
+import { GhViewCommentsArgsSchema } from "./gh/schema.js";
+import { GhCreatePrArgsSchema } from "./gh/schema.js";
+import { GhListPrsArgsSchema } from "./gh/schema.js";
+import { GhViewPrDiffArgsSchema } from "./gh/schema.js";
+import { GhPushArgsSchema } from "./gh/schema.js";
 
 // Import all handlers
 import { handleReadFiles } from "./read_files/handler.js";
@@ -102,6 +110,14 @@ import { handleGitCommit } from "./git/handler.js";
 import { handleGitLog } from "./git/handler.js";
 import { handleGitAdd } from "./git/handler.js";
 import { handleGitCheckout } from "./git/handler.js";
+import { handleGhAuth } from "./gh/handler.js";
+import { handleGhCreateIssue } from "./gh/handler.js";
+import { handleGhListIssues } from "./gh/handler.js";
+import { handleGhViewComments } from "./gh/handler.js";
+import { handleGhCreatePr } from "./gh/handler.js";
+import { handleGhListPrs } from "./gh/handler.js";
+import { handleGhViewPrDiff } from "./gh/handler.js";
+import { handleGhPush } from "./gh/handler.js";
 const ToolInputSchema = ToolSchema.shape.inputSchema;
 type ToolInput = z.infer<typeof ToolInputSchema>;
 
@@ -115,7 +131,7 @@ export class FilesystemServer {
     this.server = new Server(
       {
         name: "secure-filesystem-server",
-        version: "0.2.21",
+        version: "0.2.22",
       },
       {
         capabilities: {
@@ -595,6 +611,79 @@ export class FilesystemServer {
               "create_new (optional, default false): if true, creates the branch if it doesn't exist (like git checkout -b). " +
               "Returns JSON text: {success: true, message}, or a clear {error} string (e.g. branch does not exist, or uncommitted changes would be overwritten).",
             inputSchema: zodToJsonSchema(GitCheckoutArgsSchema) as ToolInput,
+          },
+          {
+            name: "gh_auth",
+            description:
+              "Check GitHub authentication status. If not authenticated, opens a detached terminal window (cmd /k) for the user to sign in. " +
+              "Runs `gh auth status`; on failure spawns `cmd.exe /c start ... cmd.exe /k \"<gh> auth login --git-protocol=https & exit\"` detached with ignored stdio, so the window outlives the tool call and stays open for interactive sign-in (the resolved absolute gh path is used, so the window works even when gh is not on the server's PATH). " +
+              "Returns JSON text: {success: true, message} (\"Already authenticated with GitHub.\" or \"Opened a terminal window for GitHub authentication. Please sign in there.\"), or a clear {error} string (e.g. the gh CLI is not installed).",
+            inputSchema: zodToJsonSchema(GhAuthArgsSchema) as ToolInput,
+          },
+          {
+            name: "gh_create_issue",
+            description:
+              "Create a new GitHub issue in the repository at the server process's current working directory (no path argument; the repo is resolved from the working directory's git remote, exactly as the reference tools do). " +
+              "title: the issue title. " +
+              "body (optional): the issue body — written to a temp file in the working directory and passed via --body-file (always cleaned up). " +
+              "labels (optional): label names, each added as -l. " +
+              "Returns JSON text: {success: true, url} with the new issue's URL, or a clear {error} string (e.g. repository not found, not authenticated).",
+            inputSchema: zodToJsonSchema(GhCreateIssueArgsSchema) as ToolInput,
+          },
+          {
+            name: "gh_list_issues",
+            description:
+              "List issues in the repository at the server process's current working directory. " +
+              "state (optional, default \"open\"): \"open\" or \"closed\". " +
+              "labels (optional): filter by label names (each added as -l). " +
+              "limit (optional, default 10, max 50): maximum number of issues to return. " +
+              "Returns JSON text: {issues: [{number, title, state, url, labels}]}, an empty array when there are no matches, or a clear {error} string.",
+            inputSchema: zodToJsonSchema(GhListIssuesArgsSchema) as ToolInput,
+          },
+          {
+            name: "gh_view_comments",
+            description:
+              "View comments on a specific issue or pull request in the repository at the server process's current working directory. " +
+              "number: the issue or PR number. " +
+              "type (optional, default \"issue\"): \"issue\" or \"pr\". " +
+              "Returns JSON text: {comments: [...]} with the GitHub comment objects, or a clear {error} string.",
+            inputSchema: zodToJsonSchema(GhViewCommentsArgsSchema) as ToolInput,
+          },
+          {
+            name: "gh_create_pr",
+            description:
+              "Create a new pull request in the repository at the server process's current working directory (no path argument; the repo is resolved from the working directory's git remote). " +
+              "title: the PR title. " +
+              "head_branch: the branch containing your changes. " +
+              "base_branch (optional, default \"main\"): the branch to merge into (e.g. main, master). " +
+              "body (optional): the PR description — written to a temp file in the working directory and passed via --body-file (always cleaned up). " +
+              "Returns JSON text: {success: true, url} with the new PR's URL, or a clear {error} string (e.g. head branch not found).",
+            inputSchema: zodToJsonSchema(GhCreatePrArgsSchema) as ToolInput,
+          },
+          {
+            name: "gh_list_prs",
+            description:
+              "List pull requests in the repository at the server process's current working directory. " +
+              "state (optional, default \"open\"): \"open\" or \"closed\". " +
+              "limit (optional, default 10, max 50): maximum number of PRs to return. " +
+              "Returns JSON text: {pull_requests: [{number, title, state, url, headRefName, baseRefName}]}, an empty array when there are no matches, or a clear {error} string.",
+            inputSchema: zodToJsonSchema(GhListPrsArgsSchema) as ToolInput,
+          },
+          {
+            name: "gh_view_pr_diff",
+            description:
+              "Fetch the diff/patch of a specific pull request in the repository at the server process's current working directory. " +
+              "number: the PR number. " +
+              "Returns JSON text: {diff} with the unified diff (truncated to 50,000 characters with a \"... (truncated)\" marker), or a clear {error} string.",
+            inputSchema: zodToJsonSchema(GhViewPrDiffArgsSchema) as ToolInput,
+          },
+          {
+            name: "gh_push",
+            description:
+              "Push local commits to the remote GitHub repository in the server process's current working directory (git push origin [branch]). " +
+              "branch (optional): the branch to push; defaults to the current branch. " +
+              "Returns JSON text: {success: true, message}, or a clear {error} string (e.g. remote not found, no upstream branch, authentication required).",
+            inputSchema: zodToJsonSchema(GhPushArgsSchema) as ToolInput,
           },
         ],
       };
@@ -1309,6 +1398,107 @@ export class FilesystemServer {
               throw new Error(`Invalid arguments for git_checkout: ${parsed.error}`);
             }
             const result = await handleGitCheckout(parsed.data.branch_name, parsed.data.create_new);
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "gh_auth": {
+            const parsed = GhAuthArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for gh_auth: ${parsed.error}`);
+            }
+            const result = await handleGhAuth();
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "gh_create_issue": {
+            const parsed = GhCreateIssueArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for gh_create_issue: ${parsed.error}`);
+            }
+            const result = await handleGhCreateIssue(
+              parsed.data.title,
+              parsed.data.body,
+              parsed.data.labels
+            );
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "gh_list_issues": {
+            const parsed = GhListIssuesArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for gh_list_issues: ${parsed.error}`);
+            }
+            const result = await handleGhListIssues(
+              parsed.data.state,
+              parsed.data.labels,
+              parsed.data.limit
+            );
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "gh_view_comments": {
+            const parsed = GhViewCommentsArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for gh_view_comments: ${parsed.error}`);
+            }
+            const result = await handleGhViewComments(parsed.data.number, parsed.data.type);
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "gh_create_pr": {
+            const parsed = GhCreatePrArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for gh_create_pr: ${parsed.error}`);
+            }
+            const result = await handleGhCreatePr(
+              parsed.data.title,
+              parsed.data.body,
+              parsed.data.head_branch,
+              parsed.data.base_branch
+            );
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "gh_list_prs": {
+            const parsed = GhListPrsArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for gh_list_prs: ${parsed.error}`);
+            }
+            const result = await handleGhListPrs(parsed.data.state, parsed.data.limit);
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "gh_view_pr_diff": {
+            const parsed = GhViewPrDiffArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for gh_view_pr_diff: ${parsed.error}`);
+            }
+            const result = await handleGhViewPrDiff(parsed.data.number);
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "gh_push": {
+            const parsed = GhPushArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for gh_push: ${parsed.error}`);
+            }
+            const result = await handleGhPush(parsed.data.branch);
             return {
               content: [{ type: "text", text: result }],
             };

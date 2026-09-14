@@ -12,7 +12,7 @@ Heavily extended fork of [fabienvauchelles/mcp-filesystem-extended](https://gith
 |---|---|
 | Official base | `@modelcontextprotocol/server-filesystem` (Anthropic, PBC; MIT) |
 | Base fork | [fabienvauchelles/mcp-filesystem-extended](https://github.com/fabienvauchelles/mcp-filesystem-extended) @ `b6c317a` (MIT) |
-| This fork | v0.2.1 tool parity + `transfer_files` rename, robustness patches, 8 shell tools (v0.2.2), verbatim argv (v0.2.4), `launch_file` launcher (v0.2.7), raw-byte access + `dir_diff` + text encodings (v0.2.9–v0.2.11), `wait_for_file` (v0.2.12), `replace_regex` (v0.2.14), reparse-point & long-path hardening (v0.2.15–v0.2.16), Recycle-Bin deletes (v0.2.17), `create_link` (v0.2.18), `run_javascript_free` unrestricted code execution (v0.2.20), 6 git tools (v0.2.21) — see [Differences](#differences-from-the-base-fork) |
+| This fork | v0.2.1 tool parity + `transfer_files` rename, robustness patches, 8 shell tools (v0.2.2), verbatim argv (v0.2.4), `launch_file` launcher (v0.2.7), raw-byte access + `dir_diff` + text encodings (v0.2.9–v0.2.11), `wait_for_file` (v0.2.12), `replace_regex` (v0.2.14), reparse-point & long-path hardening (v0.2.15–v0.2.16), Recycle-Bin deletes (v0.2.17), `create_link` (v0.2.18), `run_javascript_free` unrestricted code execution (v0.2.20), 6 git tools (v0.2.21), 8 GitHub tools (v0.2.22) — see [Differences](#differences-from-the-base-fork) |
 
 ## Features
 
@@ -20,6 +20,7 @@ Heavily extended fork of [fabienvauchelles/mcp-filesystem-extended](https://gith
 - **8 shell tools** — synchronous, background, and interactive command execution implemented *inside the MCP server process*: no client-side permission toggles, survives client restarts, works with any MCP client.
 - **1 code-execution tool** (`run_javascript_free`) — run a JavaScript/TypeScript snippet on the Deno runtime with **unrestricted** permissions (full filesystem, network, env, child processes, arbitrary imports): the "free" counterpart to sandboxed `run_javascript` tools that confine code to a working directory.
 - **6 git tools** (`git_status`, `git_diff`, `git_commit`, `git_log`, `git_add`, `git_checkout`) — spawn the git CLI against the repo at the server process's current working directory (no new dependency, no working-directory parameter — the same "current working directory context" as the shell tools).
+- **8 GitHub tools** (`gh_auth`, `gh_create_issue`, `gh_list_issues`, `gh_view_comments`, `gh_create_pr`, `gh_list_prs`, `gh_view_pr_diff`, `gh_push`) — spawn the `gh` CLI (and `git push` for `gh_push`) against the repo at the server process's current working directory (no new dependency, no working-directory parameter — the same "current working directory context" as the git/shell tools).
 - **1 launcher tool** (`launch_file`, Windows-only) — opens files, folders, and http(s) links in their OS default app, fully detached: returns the moment the opener is spawned (never waits for the app), no console window, no stdio inheritance; filesystem targets are confined to the allowed directories.
 - **Windows-first** — drive roots, UNC roots, long paths beyond the 260-char `MAX_PATH` limit, `cmd.exe /d /c` with verbatim argv, whole-process-tree kills (`taskkill /T /F`), detached interactive console windows.
 - **NAS-safe startup** — an allowed directory that is missing or offline (e.g., a powered-down network share) logs a warning and the server continues instead of exiting.
@@ -143,6 +144,21 @@ Operate against the repo at the server process's current working directory (the 
 | `git_add` | Stage specific `paths` or, when omitted, all changes (`git add .`). Returns `{success, message}`. |
 | `git_checkout` | Switch to an existing branch, or create + switch with `create_new: true` (`git checkout -b`). Returns `{success, message}`. |
 
+### GitHub tools (8)
+
+Operate against the repo at the server process's current working directory (no working-directory parameter — `gh` itself resolves the repo from that directory's git remote, exactly as the reference Beledarian tools do). Implemented by spawning the `gh` CLI directly (no new dependency; `gh_push` spawns `git push origin [branch]`), and argument values (titles, bodies, labels, branch names, issue/PR numbers) go verbatim as argv elements — they never pass through a shell. Long issue/PR bodies are written to a temp file in the working directory and passed via `--body-file` (mirroring the reference); the temp file is always removed. `gh` is resolved from PATH first (the reference's `checkGhInstalled`), then from the known portable install `<home>\tools\gh\bin\gh.exe` (this machine's layout); if neither is found, a clear `{error}` string is returned. `gh_auth` runs `gh auth status` and, on failure, opens a **detached** terminal window (`cmd /k`, spawned with ignored stdio so it outlives the tool call) for interactive `gh auth login` — using the resolved absolute gh path so the window works even when gh is not on the inherited PATH.
+
+| Tool | Purpose |
+|---|---|
+| `gh_auth` | Check GitHub authentication status. On failure, open a detached terminal window for `gh auth login` (the window persists for the user to sign in). Returns `{success: true, message}` or `{error}`. |
+| `gh_create_issue` | Create a new issue with `title`, optional `body` (temp `--body-file`) and optional `labels` (each `-l`). Returns `{success: true, url}` or `{error}`. |
+| `gh_list_issues` | List issues in the CWD repo: `state` (default `open`), optional `labels`, `limit` (default 10, max 50). Returns `{issues: [{number, title, state, url, labels}]}` (empty array = no matches) or `{error}`. |
+| `gh_view_comments` | View comments on issue/PR `number` (`type` default `issue`). Returns `{comments: [...]}` or `{error}`. |
+| `gh_create_pr` | Create a PR: `title`, `head_branch`, optional `body` (temp `--body-file`), `base_branch` (default `main`). Returns `{success: true, url}` or `{error}`. |
+| `gh_list_prs` | List PRs in the CWD repo: `state` (default `open`), `limit` (default 10, max 50). Returns `{pull_requests: [{number, title, state, url, headRefName, baseRefName}]}` or `{error}`. |
+| `gh_view_pr_diff` | Fetch the PR's patch/diff for `number`. Returns `{diff}` (truncated to 50,000 chars with a marker) or `{error}`. |
+| `gh_push` | Push local commits to the remote (`git push origin [branch]`); `branch` optional, defaults to the current branch. Returns `{success: true, message}` or `{error}`. |
+
 ### Launcher tool (1, Windows-only)
 
 | Tool | Purpose |
@@ -203,6 +219,8 @@ The filesystem tools work in the image; the shell tools require a Windows host w
 **v0.2.20 — `run_javascript_free`:** unrestricted JS/TS code execution on the Deno runtime — full filesystem, network, env, child-process, and import permissions (no working-directory sandbox). Reuses the shell layer's spawn/capture machinery (temp `.ts` in the shell-jobs dir, whole-tree kill on timeout, 100 KB / 20 KB output caps). The Deno binary is auto-located (`$DENO_PATH` → LM Studio's bundled `.internal/utils/deno(.exe)` via CWD walk-up or user home → PATH); missing binary yields a clear error. Default 5 s timeout, max 60 s.
 
 **v0.2.21 — git tools:** six new tools (`git_status`, `git_diff`, `git_commit`, `git_log`, `git_add`, `git_checkout`) that spawn the git CLI against the repo at the server process's current working directory (no working-directory parameter; path arguments resolve against it). No new dependency. Failure (e.g. working directory not inside a git repository) returns a clear `{error}` string, mirroring the reference Beledarian tool shapes ({diff}, {history}, {success, ...}).
+
+**v0.2.22 — GitHub tools:** eight new tools (`gh_auth`, `gh_create_issue`, `gh_list_issues`, `gh_view_comments`, `gh_create_pr`, `gh_list_prs`, `gh_view_pr_diff`, `gh_push`) that spawn the `gh` CLI (and `git push` for `gh_push`) against the repo at the server process's current working directory — no new dependency, no working-directory parameter (gh resolves the repo from the CWD's git remote, as the reference Beledarian tools do). `gh` is found on PATH (the reference's `checkGhInstalled`) with a documented fallback to the known portable install `<home>\tools\gh\bin\gh.exe`. Long issue/PR bodies go via a temp `--body-file` in the working directory (always cleaned up); a failed `gh auth status` opens a detached `cmd /k` terminal for interactive `gh auth login`. Failure (missing gh, bad remote/branch, unauthenticated) returns a clear `{error}` string, mirroring the reference tool shapes ({success, url}, {issues}, {pull_requests}, {comments}, {diff}).
 
 ## Security
 
