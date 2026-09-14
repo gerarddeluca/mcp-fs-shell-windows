@@ -1,6 +1,6 @@
 {
   "name": "mcp-fs-shell-windows",
-  "version": "0.2.22",
+  "version": "0.2.23",
   "description": "MCP filesystem server: batched file tools + standalone Windows shell tools (extended fork)",
   "license": "MIT",
   "author": "Gerard DeLuca",
@@ -32,6 +32,7 @@
     "diff": "^5.1.0",
     "glob": "^10.3.10",
     "minimatch": "^10.0.1",
+    "node-notifier": "^10.0.1",
     "zod": "^3.23.8",
     "zod-to-json-schema": "^3.23.5"
   },
@@ -39,6 +40,7 @@
     "@types/diff": "^5.0.9",
     "@types/minimatch": "^5.1.2",
     "@types/node": "^22",
+    "@types/node-notifier": "^8.0.5",
     "shx": "^0.3.4",
     "typescript": "^5.3.3"
   }

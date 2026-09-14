@@ -63,6 +63,12 @@ import { GhCreatePrArgsSchema } from "./gh/schema.js";
 import { GhListPrsArgsSchema } from "./gh/schema.js";
 import { GhViewPrDiffArgsSchema } from "./gh/schema.js";
 import { GhPushArgsSchema } from "./gh/schema.js";
+import { GetSystemInfoArgsSchema } from "./system/schema.js";
+import { ReadClipboardArgsSchema } from "./system/schema.js";
+import { WriteClipboardArgsSchema } from "./system/schema.js";
+import { SendNotificationArgsSchema } from "./system/schema.js";
+import { OpenFileArgsSchema } from "./system/schema.js";
+import { PreviewHtmlArgsSchema } from "./system/schema.js";
 
 // Import all handlers
 import { handleReadFiles } from "./read_files/handler.js";
@@ -118,6 +124,12 @@ import { handleGhCreatePr } from "./gh/handler.js";
 import { handleGhListPrs } from "./gh/handler.js";
 import { handleGhViewPrDiff } from "./gh/handler.js";
 import { handleGhPush } from "./gh/handler.js";
+import { handleGetSystemInfo } from "./system/handler.js";
+import { handleReadClipboard } from "./system/handler.js";
+import { handleWriteClipboard } from "./system/handler.js";
+import { handleSendNotification } from "./system/handler.js";
+import { handleOpenFile } from "./system/handler.js";
+import { handlePreviewHtml } from "./system/handler.js";
 const ToolInputSchema = ToolSchema.shape.inputSchema;
 type ToolInput = z.infer<typeof ToolInputSchema>;
 
@@ -131,7 +143,7 @@ export class FilesystemServer {
     this.server = new Server(
       {
         name: "secure-filesystem-server",
-        version: "0.2.22",
+        version: "0.2.23",
       },
       {
         capabilities: {
@@ -684,6 +696,64 @@ export class FilesystemServer {
               "branch (optional): the branch to push; defaults to the current branch. " +
               "Returns JSON text: {success: true, message}, or a clear {error} string (e.g. remote not found, no upstream branch, authentication required).",
             inputSchema: zodToJsonSchema(GhPushArgsSchema) as ToolInput,
+          },
+          {
+            name: "get_system_info",
+            description:
+              "Get information about the system (OS, CPU, Memory). No parameters. " +
+              "Returns JSON text: {platform, arch, release, hostname, total_memory, free_memory, cpus, node_version} " +
+              "(memory in bytes; cpus = number of logical CPUs; node_version = the Node.js version running this server).",
+            inputSchema: zodToJsonSchema(GetSystemInfoArgsSchema) as ToolInput,
+          },
+          {
+            name: "read_clipboard",
+            description:
+              "Read text content from the system clipboard. No parameters. " +
+              "On Windows uses `powershell -command Get-Clipboard` (macOS: pbpaste; other: xclip) with a 5-second timeout. " +
+              "An empty clipboard returns content \"\" (not an error). " +
+              "Returns JSON text: {content}, or a clear error if the read fails or times out.",
+            inputSchema: zodToJsonSchema(ReadClipboardArgsSchema) as ToolInput,
+          },
+          {
+            name: "write_clipboard",
+            description:
+              "Write text content to the system clipboard. content: the text to store (UTF-8). " +
+              "On Windows the content is base64-encoded into the PowerShell command line and Set-Clipboard stores the decoded text, " +
+              "so quotes, newlines, and Unicode need no escaping. " +
+              "macOS: pbcopy; other: xclip via stdin. 5-second timeout. " +
+              "Returns JSON text: {success: true}, or a clear error if the write fails or times out.",
+            inputSchema: zodToJsonSchema(WriteClipboardArgsSchema) as ToolInput,
+          },
+          {
+            name: "send_notification",
+            description:
+              "Send a system notification to the user (a Windows toast via the bundled snoretoast on this machine; node-notifier backends elsewhere). " +
+              "title: the notification title. message: the notification body. " +
+              "Dispatched fire-and-forget (sound: true, wait: false). " +
+              "Returns JSON text: {success: true, message}.",
+            inputSchema: zodToJsonSchema(SendNotificationArgsSchema) as ToolInput,
+          },
+          {
+            name: "open_file",
+            description:
+              "Open a file path or http(s) URL in the system's default application (the OS default: e.g. VLC for .mkv/.mp4, Explorer for folders, the default browser for web links). " +
+              "target: file path or URL. " +
+              "The Beledarian-named equivalent of launch_file - it delegates to the same internal launch helper: " +
+              "filesystem targets are subject to the allowed-roots policy and checked for existence; " +
+              "only http:// and https:// links are launched as URLs (every other scheme is rejected). " +
+              "Returns JSON text: {success: true, message}, or a clear error (e.g. path does not exist, unsupported URL scheme).",
+            inputSchema: zodToJsonSchema(OpenFileArgsSchema) as ToolInput,
+          },
+          {
+            name: "preview_html",
+            description:
+              "Render and preview HTML content in the system's default browser. " +
+              "html_content: the HTML to render. " +
+              "file_name (optional): name for the temp file (default: a timestamped preview_<ts>.html; " +
+              "only the final path segment is used - the file always lands in the system temp dir, and an existing file of that name is overwritten). " +
+              "The temp file is written, launched in the default browser (same detached opener as launch_file), and left on disk. " +
+              "Returns JSON text: {success: true, path, message} with the temp file path.",
+            inputSchema: zodToJsonSchema(PreviewHtmlArgsSchema) as ToolInput,
           },
         ],
       };
@@ -1499,6 +1569,72 @@ export class FilesystemServer {
               throw new Error(`Invalid arguments for gh_push: ${parsed.error}`);
             }
             const result = await handleGhPush(parsed.data.branch);
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "get_system_info": {
+            const parsed = GetSystemInfoArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for get_system_info: ${parsed.error}`);
+            }
+            const result = await handleGetSystemInfo();
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "read_clipboard": {
+            const parsed = ReadClipboardArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for read_clipboard: ${parsed.error}`);
+            }
+            const result = await handleReadClipboard();
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "write_clipboard": {
+            const parsed = WriteClipboardArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for write_clipboard: ${parsed.error}`);
+            }
+            const result = await handleWriteClipboard(parsed.data.content);
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "send_notification": {
+            const parsed = SendNotificationArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for send_notification: ${parsed.error}`);
+            }
+            const result = await handleSendNotification(parsed.data.title, parsed.data.message);
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "open_file": {
+            const parsed = OpenFileArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for open_file: ${parsed.error}`);
+            }
+            const result = await handleOpenFile(parsed.data.target, this.allowedDirectories);
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "preview_html": {
+            const parsed = PreviewHtmlArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for preview_html: ${parsed.error}`);
+            }
+            const result = await handlePreviewHtml(parsed.data.html_content, parsed.data.file_name);
             return {
               content: [{ type: "text", text: result }],
             };

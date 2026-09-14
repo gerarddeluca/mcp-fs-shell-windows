@@ -54,7 +54,9 @@ const URI_SCHEME = /^[A-Za-z][A-Za-z0-9+.-]+:/;
  * Only the opener executable changes; the target still passes the full
  * URL/path policy below.
  */
-function openerPath(): string {
+// Exported (v0.2.23) so the system tools (preview_html) can reuse the exact
+// same opener resolution — no behavior change.
+export function openerPath(): string {
   if (process.platform !== "win32") {
     throw new Error("launch_file is supported only on Windows");
   }
