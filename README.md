@@ -12,13 +12,14 @@ Heavily extended fork of [fabienvauchelles/mcp-filesystem-extended](https://gith
 |---|---|
 | Official base | `@modelcontextprotocol/server-filesystem` (Anthropic, PBC; MIT) |
 | Base fork | [fabienvauchelles/mcp-filesystem-extended](https://github.com/fabienvauchelles/mcp-filesystem-extended) @ `b6c317a` (MIT) |
-| This fork | v0.2.1 tool parity + `transfer_files` rename, robustness patches, 8 shell tools (v0.2.2), verbatim argv (v0.2.4), `launch_file` launcher (v0.2.7), raw-byte access + `dir_diff` + text encodings (v0.2.9–v0.2.11), `wait_for_file` (v0.2.12), `replace_regex` (v0.2.14), reparse-point & long-path hardening (v0.2.15–v0.2.16), Recycle-Bin deletes (v0.2.17), `create_link` (v0.2.18), `run_javascript_free` unrestricted code execution (v0.2.20) — see [Differences](#differences-from-the-base-fork) |
+| This fork | v0.2.1 tool parity + `transfer_files` rename, robustness patches, 8 shell tools (v0.2.2), verbatim argv (v0.2.4), `launch_file` launcher (v0.2.7), raw-byte access + `dir_diff` + text encodings (v0.2.9–v0.2.11), `wait_for_file` (v0.2.12), `replace_regex` (v0.2.14), reparse-point & long-path hardening (v0.2.15–v0.2.16), Recycle-Bin deletes (v0.2.17), `create_link` (v0.2.18), `run_javascript_free` unrestricted code execution (v0.2.20), 6 git tools (v0.2.21) — see [Differences](#differences-from-the-base-fork) |
 
 ## Features
 
 - **30 filesystem tools** — batched read/write/append/delete (including raw-byte access, per-file text encodings, Recycle-Bin deletes, and link creation), move/copy, line-number patching, search (name / glob / regex / fuzzy / wait-for-file), in-place regex replacement, tree, counts, checksums, file and directory diffs, exact-match text editing. Confined to the allowed directories passed on the command line.
 - **8 shell tools** — synchronous, background, and interactive command execution implemented *inside the MCP server process*: no client-side permission toggles, survives client restarts, works with any MCP client.
 - **1 code-execution tool** (`run_javascript_free`) — run a JavaScript/TypeScript snippet on the Deno runtime with **unrestricted** permissions (full filesystem, network, env, child processes, arbitrary imports): the "free" counterpart to sandboxed `run_javascript` tools that confine code to a working directory.
+- **6 git tools** (`git_status`, `git_diff`, `git_commit`, `git_log`, `git_add`, `git_checkout`) — spawn the git CLI against the repo at the server process's current working directory (no new dependency, no working-directory parameter — the same "current working directory context" as the shell tools).
 - **1 launcher tool** (`launch_file`, Windows-only) — opens files, folders, and http(s) links in their OS default app, fully detached: returns the moment the opener is spawned (never waits for the app), no console window, no stdio inheritance; filesystem targets are confined to the allowed directories.
 - **Windows-first** — drive roots, UNC roots, long paths beyond the 260-char `MAX_PATH` limit, `cmd.exe /d /c` with verbatim argv, whole-process-tree kills (`taskkill /T /F`), detached interactive console windows.
 - **NAS-safe startup** — an allowed directory that is missing or offline (e.g., a powered-down network share) logs a warning and the server continues instead of exiting.
@@ -129,6 +130,19 @@ Practical notes:
 |---|---|
 | `run_javascript_free` | Run a JS/TS snippet on the Deno runtime with **unrestricted permissions**: full filesystem read/write (any drive or UNC path the server user can reach), network, environment, child processes, and arbitrary imports (`node:*`, `npm:*`, `https:*`). Temp `.ts` file + `deno run --allow-read --allow-write --allow-net --allow-env --allow-sys --allow-run --allow-ffi --allow-import`. Default 5 s timeout, max 60 s; optional `cwd` (defaults to the `shell_cwd` default). Non-zero exit or timeout returns an error that still includes the captured stdout/stderr (100 KB / 20 KB caps). The Deno binary is located via `$DENO_PATH` → `<ancestor>/.internal/utils/deno(.exe)` (walk-up) → `<home>/.lmstudio/.internal/utils/deno(.exe)` → PATH. |
 
+### Git tools (6)
+
+Operate against the repo at the server process's current working directory (the directory the server was launched in, e.g. the chat working directory). Implemented by spawning the `git` CLI directly — no new dependency, and argument values (messages, branch names, file paths) never pass through a shell: they go verbatim as argv elements. Path arguments (`git_diff.file_path`, `git_add.paths`) resolve relative to the working directory. A working directory that is not inside a git repository yields a clear `{error}` string, not a crash.
+
+| Tool | Purpose |
+|---|---|
+| `git_status` | Branch, upstream, ahead/behind, `isClean`, plus staged / not-staged / untracked file lists (JSON: `{current, tracking, ahead, behind, isClean, staged, notStaged, untracked, files}`). |
+| `git_diff` | Working-tree or staged (`cached: true`) unified diff, optionally limited to one file (`file_path`). Returns `{diff}` (or `{diff: "No changes."}`). |
+| `git_commit` | Commit staged changes with `message`; returns `{success, summary: {changed, insertions, deletions}}`. Standard git behavior: only what is staged gets committed. |
+| `git_log` | Recent commits, newest first, capped by `max_count` (default 10): `{history: ["<hash> <subject> (<author>, <date relative>)", ...]}`. |
+| `git_add` | Stage specific `paths` or, when omitted, all changes (`git add .`). Returns `{success, message}`. |
+| `git_checkout` | Switch to an existing branch, or create + switch with `create_new: true` (`git checkout -b`). Returns `{success, message}`. |
+
 ### Launcher tool (1, Windows-only)
 
 | Tool | Purpose |
@@ -187,6 +201,8 @@ The filesystem tools work in the image; the shell tools require a Windows host w
 **v0.2.18 — `create_link`:** create hardlinks, directory junctions, and file/directory symlinks (`type: auto | symlink | junction | hardlink`) with strict checks: the target must exist, the link path must not, and the link path's parent must exist.
 
 **v0.2.20 — `run_javascript_free`:** unrestricted JS/TS code execution on the Deno runtime — full filesystem, network, env, child-process, and import permissions (no working-directory sandbox). Reuses the shell layer's spawn/capture machinery (temp `.ts` in the shell-jobs dir, whole-tree kill on timeout, 100 KB / 20 KB output caps). The Deno binary is auto-located (`$DENO_PATH` → LM Studio's bundled `.internal/utils/deno(.exe)` via CWD walk-up or user home → PATH); missing binary yields a clear error. Default 5 s timeout, max 60 s.
+
+**v0.2.21 — git tools:** six new tools (`git_status`, `git_diff`, `git_commit`, `git_log`, `git_add`, `git_checkout`) that spawn the git CLI against the repo at the server process's current working directory (no working-directory parameter; path arguments resolve against it). No new dependency. Failure (e.g. working directory not inside a git repository) returns a clear `{error}` string, mirroring the reference Beledarian tool shapes ({diff}, {history}, {success, ...}).
 
 ## Security
 

@@ -49,6 +49,12 @@ import { ShellTerminalArgsSchema } from "./shell/schema.js";
 import { ShellPythonArgsSchema } from "./shell/schema.js";
 import { ShellCwdArgsSchema } from "./shell/schema.js";
 import { RunJavascriptFreeArgsSchema } from "./run_javascript/schema.js";
+import { GitStatusArgsSchema } from "./git/schema.js";
+import { GitDiffArgsSchema } from "./git/schema.js";
+import { GitCommitArgsSchema } from "./git/schema.js";
+import { GitLogArgsSchema } from "./git/schema.js";
+import { GitAddArgsSchema } from "./git/schema.js";
+import { GitCheckoutArgsSchema } from "./git/schema.js";
 
 // Import all handlers
 import { handleReadFiles } from "./read_files/handler.js";
@@ -90,6 +96,12 @@ import { handleShellTerminal } from "./shell/handler.js";
 import { handleShellPython } from "./shell/handler.js";
 import { handleShellCwd } from "./shell/handler.js";
 import { handleRunJavascriptFree } from "./run_javascript/handler.js";
+import { handleGitStatus } from "./git/handler.js";
+import { handleGitDiff } from "./git/handler.js";
+import { handleGitCommit } from "./git/handler.js";
+import { handleGitLog } from "./git/handler.js";
+import { handleGitAdd } from "./git/handler.js";
+import { handleGitCheckout } from "./git/handler.js";
 const ToolInputSchema = ToolSchema.shape.inputSchema;
 type ToolInput = z.infer<typeof ToolInputSchema>;
 
@@ -103,7 +115,7 @@ export class FilesystemServer {
     this.server = new Server(
       {
         name: "secure-filesystem-server",
-        version: "0.2.20",
+        version: "0.2.21",
       },
       {
         capabilities: {
@@ -533,6 +545,56 @@ export class FilesystemServer {
               "Non-zero exit or timeout returns an error that still includes the captured output. " +
               "Requires a Deno binary: $DENO_PATH, <LM Studio home>/.internal/utils/deno(.exe) (found by walking up from the server CWD or the user home), or deno on PATH.",
             inputSchema: zodToJsonSchema(RunJavascriptFreeArgsSchema) as ToolInput,
+          },
+          {
+            name: "git_status",
+            description:
+              "Get the current git status of the repository at the server process's current working directory (the directory the server was launched in, e.g. the chat working directory; no path argument). " +
+              "Returns JSON text: {current (branch name; null for detached HEAD), tracking (upstream branch or null), ahead, behind, isClean, staged: [], notStaged: [], untracked: [], files: [{path, index, working_dir}]}. " +
+              "If the working directory is not inside a git repository, returns a clear {error} string (not a crash).",
+            inputSchema: zodToJsonSchema(GitStatusArgsSchema) as ToolInput,
+          },
+          {
+            name: "git_diff",
+            description:
+              "Get the git diff of the repository at the server process's current working directory or specific files. " +
+              "file_path (optional): path to a specific file to diff, resolved relative to the working directory. " +
+              "cached (optional): show staged changes only (git diff --cached). " +
+              "Returns JSON text: {diff} with the unified diff (\"No changes.\" when there is nothing to show), or a clear {error} string if the working directory is not inside a git repository.",
+            inputSchema: zodToJsonSchema(GitDiffArgsSchema) as ToolInput,
+          },
+          {
+            name: "git_commit",
+            description:
+              "Commit staged changes to the git repository at the server process's current working directory. " +
+              "Standard git behavior: commits only what is staged (stage first with git_add). " +
+              "Returns JSON text: {success: true, summary: {changed, insertions, deletions}}, or a clear {error} string (e.g. when nothing is staged).",
+            inputSchema: zodToJsonSchema(GitCommitArgsSchema) as ToolInput,
+          },
+          {
+            name: "git_log",
+            description:
+              "Get recent git commit history from the repository at the server process's current working directory. " +
+              "max_count (optional): max number of commits to return (default: 10). " +
+              "Returns JSON text: {history: ['<hash> <subject> (<author>, <date relative>)', ...]}, newest first, or a clear {error} string (e.g. when the repo has no commits).",
+            inputSchema: zodToJsonSchema(GitLogArgsSchema) as ToolInput,
+          },
+          {
+            name: "git_add",
+            description:
+              "Stage specific files or all changes for the next commit, in the repository at the server process's current working directory. " +
+              "paths (optional): specific file paths to stage, resolved relative to the working directory; if omitted, stages all changes (git add .). " +
+              "Returns JSON text: {success: true, message}, or a clear {error} string.",
+            inputSchema: zodToJsonSchema(GitAddArgsSchema) as ToolInput,
+          },
+          {
+            name: "git_checkout",
+            description:
+              "Switch to an existing branch, or create and switch to a new one, in the repository at the server process's current working directory. " +
+              "branch_name: name of the branch to checkout. " +
+              "create_new (optional, default false): if true, creates the branch if it doesn't exist (like git checkout -b). " +
+              "Returns JSON text: {success: true, message}, or a clear {error} string (e.g. branch does not exist, or uncommitted changes would be overwritten).",
+            inputSchema: zodToJsonSchema(GitCheckoutArgsSchema) as ToolInput,
           },
         ],
       };
@@ -1181,6 +1243,72 @@ export class FilesystemServer {
               parsed.data.timeout_seconds,
               parsed.data.cwd
             );
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "git_status": {
+            const parsed = GitStatusArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for git_status: ${parsed.error}`);
+            }
+            const result = await handleGitStatus();
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "git_diff": {
+            const parsed = GitDiffArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for git_diff: ${parsed.error}`);
+            }
+            const result = await handleGitDiff(parsed.data.file_path, parsed.data.cached);
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "git_commit": {
+            const parsed = GitCommitArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for git_commit: ${parsed.error}`);
+            }
+            const result = await handleGitCommit(parsed.data.message);
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "git_log": {
+            const parsed = GitLogArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for git_log: ${parsed.error}`);
+            }
+            const result = await handleGitLog(parsed.data.max_count);
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "git_add": {
+            const parsed = GitAddArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for git_add: ${parsed.error}`);
+            }
+            const result = await handleGitAdd(parsed.data.paths);
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "git_checkout": {
+            const parsed = GitCheckoutArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for git_checkout: ${parsed.error}`);
+            }
+            const result = await handleGitCheckout(parsed.data.branch_name, parsed.data.create_new);
             return {
               content: [{ type: "text", text: result }],
             };
