@@ -1,6 +1,6 @@
 {
   "name": "mcp-fs-shell-windows",
-  "version": "0.2.26",
+  "version": "0.2.27",
   "description": "MCP filesystem server: batched file tools + standalone Windows shell tools (extended fork)",
   "license": "MIT",
   "author": "Gerard DeLuca",
@@ -24,6 +24,7 @@
   ],
   "scripts": {
     "build": "tsc && shx chmod +x dist/*.js",
+    "test": "node --test tests/",
     "prepare": "npm run build",
     "watch": "tsc --watch"
   },

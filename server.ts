@@ -148,6 +148,18 @@ import {
   handleWikipediaSearch,
 } from "./web/handler.js";
 import { handleRagLocalFiles, handleRagWebContent } from "./rag/handler.js";
+import {
+  BrowserSessionOpenArgsSchema,
+  BrowserSessionControlArgsSchema,
+  BrowserSessionCloseArgsSchema,
+  BrowserOpenPageArgsSchema,
+} from "./browser/schema.js";
+import {
+  handleBrowserSessionOpen,
+  handleBrowserSessionControl,
+  handleBrowserSessionClose,
+  handleBrowserOpenPage,
+} from "./browser/handler.js";
 const ToolInputSchema = ToolSchema.shape.inputSchema;
 type ToolInput = z.infer<typeof ToolInputSchema>;
 
@@ -161,7 +173,7 @@ export class FilesystemServer {
     this.server = new Server(
       {
         name: "secure-filesystem-server",
-        version: "0.2.26",
+        version: "0.2.27",
       },
       {
         capabilities: {
@@ -854,6 +866,56 @@ export class FilesystemServer {
               "Fetches the URL, converts the HTML to plain text via html-to-text (wordwrap off, anchor hrefs ignored, images skipped), chunks it by paragraph (chunks longer than 20 characters), embeds the query and chunks via LM Studio's /v1/embeddings endpoint (bundled nomic-embed-text v1.5; the model id can be overridden with the MCP_RAG_EMBED_MODEL environment variable), and returns the top 5 chunks sorted by cosine similarity. " +
               "Returns JSON text: {url, query, relevant_chunks: [{chunk, score}]} or {error: 'Failed during RAG web search: ...'}.",
             inputSchema: zodToJsonSchema(RagWebContentArgsSchema) as ToolInput,
+          },
+          {
+            name: "browser_session_open",
+            description:
+              "Open a persistent browser session (single active page), navigate to URL, and return page text for context. " +
+              "Launches a headless Chrome-for-Testing instance via puppeteer-core (shared launcher: browser/launcher.ts; also used by web_search's browser legs). " +
+              "There is ONE active session per server process - re-opening replaces any existing session (closing its browser first). " +
+              "Navigation waits for networkidle0 with a 30s timeout. " +
+              "wait_for_selector: optional CSS selector to wait for after navigation (15s timeout). " +
+              "include_page_text: if true (default), returns full page text content (document.body.innerText) after opening. " +
+              "Returns JSON text: {success, session_active, url, title, text_content, text_length, message} or {error: 'Failed to open browser session: ...'}.",
+            inputSchema: zodToJsonSchema(BrowserSessionOpenArgsSchema) as ToolInput,
+          },
+          {
+            name: "browser_session_control",
+            description:
+              "Control the active persistent browser session. " +
+              "Supports actions, page reading, screenshot capture, and fuzzy finding in-page text/selectors. " +
+              "actions: array of {type: wait_for_selector | wait | click | type | press | select | hover | scroll | evaluate, selector?, text?, value?, key?, milliseconds?, x?, y?, script?} executed in order. " +
+              "click: native click with one retry, then DOM fallback (scrollIntoView + element.click); type: triple-clicks to select, clears, then types; evaluate: runs a JS snippet in page context. " +
+              "Missing required fields produce clear errors (e.g. \"Action 'click' requires 'selector'.\"). " +
+              "read_page: if true (default), returns page metadata (url + title). Full text is returned only on URL change or when full_read=true. " +
+              "full_read: if true, forces full page text output even when URL has not changed. " +
+              "screenshot_path: optional screenshot output path (must be within an allowed directory); full_page_screenshot: capture the full page. " +
+              "fuzzy_find: fuzzy-find query over in-page content/selectors (interactive + text nodes, deduped, capped at 400 candidates; ranked by text then selector similarity); max_results: max fuzzy results (default 5, max 20). " +
+              "Returns JSON text: {success, session_active, actions_executed, screenshot_saved, url_changed, url_change_notice, page, fuzzy_find_results} or {error: 'Browser session control failed: ...'}. " +
+              "Fails with a clear 'No active browser session. Call 'browser_session_open' first.' error when no session is open.",
+            inputSchema: zodToJsonSchema(BrowserSessionControlArgsSchema) as ToolInput,
+          },
+          {
+            name: "browser_session_close",
+            description:
+              "Close the active persistent browser session. " +
+              "Tears down the session's Chrome instance; subsequent browser_session_control calls fail with the clear no-session error. " +
+              "Idempotent: when no session is open it succeeds with session_active=false and message 'No active browser session.'. " +
+              "Returns JSON text: {success, session_active, message} or {error: 'Failed to close browser session: ...'}.",
+            inputSchema: zodToJsonSchema(BrowserSessionCloseArgsSchema) as ToolInput,
+          },
+          {
+            name: "browser_open_page",
+            description:
+              "Open a webpage in a headless browser (puppeteer-core), render it once, and return content. " +
+              "One-shot only; do not use for multi-step navigation. " +
+              "Stateless: uses its own browser instance (shared launcher: browser/launcher.ts) that is always closed on return, and never touches the persistent browser session. " +
+              "url: page to load (networkidle0, 30s timeout). " +
+              "wait_for_selector: CSS selector to wait for before returning (10s timeout). " +
+              "actions: optional scripted browser steps to run after navigation (same action schema as browser_session_control). " +
+              "screenshot_path: path to save a screenshot (must be within an allowed directory); full_page_screenshot: capture the full page. " +
+              "Returns JSON text: {url, title, text_content (max 5000 chars), screenshot_saved, actions_executed, url_changed, url_change_notice} or {error: 'Browser operation failed: ...'}.",
+            inputSchema: zodToJsonSchema(BrowserOpenPageArgsSchema) as ToolInput,
           },
         ],
       };
@@ -1823,6 +1885,70 @@ export class FilesystemServer {
               throw new Error(`Invalid arguments for rag_web_content: ${parsed.error}`);
             }
             const result = await handleRagWebContent(parsed.data.url, parsed.data.query);
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "browser_session_open": {
+            const parsed = BrowserSessionOpenArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for browser_session_open: ${parsed.error}`);
+            }
+            const result = await handleBrowserSessionOpen(parsed.data.url, parsed.data.wait_for_selector, parsed.data.include_page_text);
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "browser_session_control": {
+            const parsed = BrowserSessionControlArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for browser_session_control: ${parsed.error}`);
+            }
+            const result = await handleBrowserSessionControl(
+              {
+                actions: parsed.data.actions,
+                read_page: parsed.data.read_page,
+                full_read: parsed.data.full_read,
+                screenshot_path: parsed.data.screenshot_path,
+                full_page_screenshot: parsed.data.full_page_screenshot,
+                fuzzy_find: parsed.data.fuzzy_find,
+                max_results: parsed.data.max_results,
+              },
+              this.allowedDirectories
+            );
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "browser_session_close": {
+            const parsed = BrowserSessionCloseArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for browser_session_close: ${parsed.error}`);
+            }
+            const result = await handleBrowserSessionClose();
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "browser_open_page": {
+            const parsed = BrowserOpenPageArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for browser_open_page: ${parsed.error}`);
+            }
+            const result = await handleBrowserOpenPage(
+              {
+                url: parsed.data.url,
+                screenshot_path: parsed.data.screenshot_path,
+                wait_for_selector: parsed.data.wait_for_selector,
+                full_page_screenshot: parsed.data.full_page_screenshot,
+                actions: parsed.data.actions,
+              },
+              this.allowedDirectories
+            );
             return {
               content: [{ type: "text", text: result }],
             };

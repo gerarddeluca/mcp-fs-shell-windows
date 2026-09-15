@@ -1,46 +1,20 @@
-import type { Browser } from "puppeteer-core";
+import {
+  closeSharedBrowser,
+  getSharedBrowser,
+} from "../browser/launcher.js";
 import {
   parseDuckDuckGoHtml,
   type SearchProvider,
   type SearchResult,
 } from "./ddgParse.js";
 
-// Chrome-for-Testing build already verified on this machine by the Beledarian
-// browser tools (puppeteer 24.31 pairs with Chrome 142.0.7444.175). puppeteer-core
-// is used because it is pure JS (no browser download). Launch is lazy and provider
+// The browser legs (duckduckgo-html / google / bing) launch through the shared
+// browser launcher (browser/launcher.ts): Chrome-for-Testing 142.0.7444.175 via
+// puppeteer-core (pure JS, no browser download). Launch is lazy and provider
 // errors are collected (not fatal), so a missing browser never breaks the
-// non-puppeteer legs.
-const CHROME_PATH =
-  "C:\\Users\\Gerar\\.cache\\puppeteer\\chrome\\win64-142.0.7444.175\\chrome-win64\\chrome.exe";
-
-let sharedBrowser: Browser | null = null;
-
-const getBrowser = async (): Promise<Browser> => {
-  if (!sharedBrowser) {
-    const puppeteer = await import("puppeteer-core");
-    sharedBrowser = await puppeteer.launch({
-      headless: true,
-      executablePath: CHROME_PATH,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
-    });
-  }
-  return sharedBrowser;
-};
-
-// Close and drop the shared browser so a later provider can relaunch cleanly
-// (the reference kept a stale closed instance; nulling here is strictly safer
-// for manual multi-provider mode).
-const closeSharedBrowser = async (): Promise<void> => {
-  if (sharedBrowser) {
-    const browser = sharedBrowser;
-    sharedBrowser = null;
-    try {
-      await browser.close();
-    } catch {
-      // already closed
-    }
-  }
-};
+// non-puppeteer legs. getSharedBrowser/closeSharedBrowser preserve the
+// per-leg close semantics (each leg gets a clean instance).
+const getBrowser = getSharedBrowser;
 
 export async function handleWebSearch(
   query: string,
@@ -100,7 +74,7 @@ export async function handleWebSearch(
     },
 
     "duckduckgo-html": async (q: string) => {
-      const browser = await getBrowser();
+      const browser = await getBrowser(); // shared launcher (browser/launcher.ts)
       try {
         const page = await browser.newPage();
         await page.goto(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`, {
