@@ -77,6 +77,7 @@ import {
   FetchWebContentArgsSchema,
   WikipediaSearchArgsSchema,
 } from "./web/schema.js";
+import { RagLocalFilesArgsSchema, RagWebContentArgsSchema } from "./rag/schema.js";
 
 // Import all handlers
 import { handleReadFiles } from "./read_files/handler.js";
@@ -146,6 +147,7 @@ import {
   handleFetchWebContent,
   handleWikipediaSearch,
 } from "./web/handler.js";
+import { handleRagLocalFiles, handleRagWebContent } from "./rag/handler.js";
 const ToolInputSchema = ToolSchema.shape.inputSchema;
 type ToolInput = z.infer<typeof ToolInputSchema>;
 
@@ -159,7 +161,7 @@ export class FilesystemServer {
     this.server = new Server(
       {
         name: "secure-filesystem-server",
-        version: "0.2.25",
+        version: "0.2.26",
       },
       {
         capabilities: {
@@ -832,6 +834,26 @@ export class FilesystemServer {
               "lang (optional): language code, default 'en'. " +
               "Returns JSON text: {results: [{title, summary, url}]}, {results: 'No Wikipedia articles found.'}, or {error: 'Wikipedia search failed: ...'}.",
             inputSchema: zodToJsonSchema(WikipediaSearchArgsSchema) as ToolInput,
+          },
+          {
+            name: "rag_local_files",
+            description:
+              "Perform RAG (Retrieval-Augmented Generation) on files in a directory. " +
+              "Recursively scans up to 50 text files under path (default: the server process's working directory), skipping binary extensions (.png/.jpg/.jpeg/.gif/.ico/.exe/.dll/.bin). " +
+              "file_pattern (optional) restricts the scan to files whose name or full path contains the pattern (e.g. '.ts' or 'src/'). " +
+              "Files are chunked by paragraph (chunks longer than 20 characters); the query and all chunks are embedded via LM Studio's /v1/embeddings endpoint (bundled nomic-embed-text v1.5; the model id can be overridden with the MCP_RAG_EMBED_MODEL environment variable). " +
+              "Chunks scoring above cosine similarity 0.4 against the query are kept, sorted by score, and the top 10 are returned. " +
+              "Returns JSON text: {query, results: [{file, score, content}]} or {error: 'Local RAG failed: ...'}. " +
+              "Only works within allowed directories.",
+            inputSchema: zodToJsonSchema(RagLocalFilesArgsSchema) as ToolInput,
+          },
+          {
+            name: "rag_web_content",
+            description:
+              "Fetch content from a URL, and then use RAG to find and return only the text chunks most relevant to a specific query. " +
+              "Fetches the URL, converts the HTML to plain text via html-to-text (wordwrap off, anchor hrefs ignored, images skipped), chunks it by paragraph (chunks longer than 20 characters), embeds the query and chunks via LM Studio's /v1/embeddings endpoint (bundled nomic-embed-text v1.5; the model id can be overridden with the MCP_RAG_EMBED_MODEL environment variable), and returns the top 5 chunks sorted by cosine similarity. " +
+              "Returns JSON text: {url, query, relevant_chunks: [{chunk, score}]} or {error: 'Failed during RAG web search: ...'}.",
+            inputSchema: zodToJsonSchema(RagWebContentArgsSchema) as ToolInput,
           },
         ],
       };
@@ -1779,6 +1801,28 @@ export class FilesystemServer {
               throw new Error(`Invalid arguments for wikipedia_search: ${parsed.error}`);
             }
             const result = await handleWikipediaSearch(parsed.data.query, parsed.data.lang);
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "rag_local_files": {
+            const parsed = RagLocalFilesArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for rag_local_files: ${parsed.error}`);
+            }
+            const result = await handleRagLocalFiles(parsed.data.query, parsed.data.path, parsed.data.file_pattern, this.allowedDirectories);
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "rag_web_content": {
+            const parsed = RagWebContentArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for rag_web_content: ${parsed.error}`);
+            }
+            const result = await handleRagWebContent(parsed.data.url, parsed.data.query);
             return {
               content: [{ type: "text", text: result }],
             };
