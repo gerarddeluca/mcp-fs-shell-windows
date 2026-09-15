@@ -160,6 +160,28 @@ import {
   handleBrowserSessionClose,
   handleBrowserOpenPage,
 } from "./browser/handler.js";
+import {
+  ExecuteCommandArgsSchema,
+  RunInTerminalArgsSchema,
+  RunTestCommandArgsSchema,
+  RunBackgroundCommandArgsSchema,
+  CheckBackgroundCommandArgsSchema,
+  CancelBackgroundCommandArgsSchema,
+  RunPythonArgsSchema,
+  RunJavascriptArgsSchema,
+  SaveMemoryArgsSchema,
+} from "./compat/schema.js";
+import {
+  handleExecuteCommand,
+  handleRunInTerminal,
+  handleRunTestCommand,
+  handleRunBackgroundCommand,
+  handleCheckBackgroundCommand,
+  handleCancelBackgroundCommand,
+  handleRunPython,
+  handleRunJavascript,
+  handleSaveMemory,
+} from "./compat/handler.js";
 const ToolInputSchema = ToolSchema.shape.inputSchema;
 type ToolInput = z.infer<typeof ToolInputSchema>;
 
@@ -173,7 +195,7 @@ export class FilesystemServer {
     this.server = new Server(
       {
         name: "secure-filesystem-server",
-        version: "0.2.27",
+        version: "0.2.28",
       },
       {
         capabilities: {
@@ -916,6 +938,102 @@ export class FilesystemServer {
               "screenshot_path: path to save a screenshot (must be within an allowed directory); full_page_screenshot: capture the full page. " +
               "Returns JSON text: {url, title, text_content (max 5000 chars), screenshot_saved, actions_executed, url_changed, url_change_notice} or {error: 'Browser operation failed: ...'}.",
             inputSchema: zodToJsonSchema(BrowserOpenPageArgsSchema) as ToolInput,
+          },
+          {
+            name: "execute_command",
+            description:
+              "Beledarian-compatible alias of shell_run (same bounded synchronous semantics, same result shape). " +
+              "Execute a shell command in the current working directory and return the stdout and stderr output of the command. " +
+              "You can optionally provide input to be piped to the command's stdin. " +
+              "IMPORTANT: The host operating system is 'win32' (Windows) - do NOT use 'bash' or 'sh' commands unless you are certain WSL is available; use standard Windows 'cmd' or 'powershell' syntax. " +
+              "timeout_seconds: default 5, max 60 (Beledarian's 60 s cap; the native shell_run caps at 28 s). " +
+              "Returns {command, exitCode, stdout, stderr, timedOut, duration_ms, cwd}; non-zero exit or timeout returns an error that still includes the captured output.",
+            inputSchema: zodToJsonSchema(ExecuteCommandArgsSchema) as ToolInput,
+          },
+          {
+            name: "run_in_terminal",
+            description:
+              "Beledarian-compatible alias of shell_terminal. " +
+              "Launch a command in a new, separate interactive terminal window. " +
+              "Use this for scripts that require user interaction (input/output) or to open a shell in a specific directory. " +
+              "(Currently optimized for Windows.) " +
+              "Returns the shell_terminal job JSON (including the job id); use cancel_background_command (or shell_cancel) to close the window.",
+            inputSchema: zodToJsonSchema(RunInTerminalArgsSchema) as ToolInput,
+          },
+          {
+            name: "run_test_command",
+            description:
+              "Beledarian-compatible alias of shell_test. " +
+              "Execute a test command (like 'npm test') and return the results as {command, exit_code, stdout, stderr, passed}. " +
+              "Specialized for capturing test output. Never errors on a failing test. Runs with CI=true. " +
+              "Host is Windows; use cmd.exe syntax. " +
+              "Bounded to 28 s by the MCP client timeout - for longer suites use run_background_command (shell_start) + check_background_command (shell_check).",
+            inputSchema: zodToJsonSchema(RunTestCommandArgsSchema) as ToolInput,
+          },
+          {
+            name: "run_background_command",
+            description:
+              "Beledarian-compatible alias of shell_start. " +
+              "Starts a long-running process in the background. The process is not blocked, allowing you to do other things. " +
+              "You MUST provide a descriptive name. timeout_hours: optional, default 10, max 10 (auto-kill). " +
+              "Host is Windows; use cmd.exe syntax. " +
+              "Returns the shell_start job JSON (including the job id); poll with check_background_command (shell_check) and kill with cancel_background_command (shell_cancel). " +
+              "Job ids live in this MCP server process's registry (same lifetime as Beledarian's per-process backgroundCommands map - lost when the server restarts).",
+            inputSchema: zodToJsonSchema(RunBackgroundCommandArgsSchema) as ToolInput,
+          },
+          {
+            name: "check_background_command",
+            description:
+              "Beledarian-compatible alias of shell_check. " +
+              "Check the status, stdout, and stderr of a running or completed background command started with run_background_command (or run_in_terminal). " +
+              "Returns {id, name, status, exitCode, duration_seconds, stdout_tail, stderr_tail, logFile}. " +
+              "Status values: running, completed, error, cancelled, timeout.",
+            inputSchema: zodToJsonSchema(CheckBackgroundCommandArgsSchema) as ToolInput,
+          },
+          {
+            name: "cancel_background_command",
+            description:
+              "Beledarian-compatible alias of shell_cancel. " +
+              "Kills a running background command (job from run_background_command or run_in_terminal). " +
+              "Kills the whole process tree.",
+            inputSchema: zodToJsonSchema(CancelBackgroundCommandArgsSchema) as ToolInput,
+          },
+          {
+            name: "run_python",
+            description:
+              "Beledarian-compatible alias of shell_python (keeps Beledarian's 60 s cap). " +
+              "Run a Python code snippet. You cannot import external modules but you have read/write access to the current working directory. " +
+              "Pass the code you wish to run as a string in the 'python' parameter. " +
+              "By default, the code will timeout in 5 seconds. You can extend this timeout by setting the 'timeout_seconds' parameter to a higher value in seconds, up to a maximum of 60 seconds. " +
+              "You will get the stdout and stderr output of the code execution, thus please print the output you wish to return using 'print()'. " +
+              "Requires system Python on PATH. Optional cwd overrides the default working directory (see shell_cwd). " +
+              "Returns {exitCode, stdout, stderr, timedOut, duration_ms}; non-zero exit or timeout returns an error that still includes the captured output.",
+            inputSchema: zodToJsonSchema(RunPythonArgsSchema) as ToolInput,
+          },
+          {
+            name: "run_javascript",
+            description:
+              "Beledarian-compatible alias of the fork's run_javascript - the CONFINED variant (NOT an alias of run_javascript_free). " +
+              "Run a JavaScript/TypeScript code snippet using deno. You cannot import external modules but you have read/write access to the current working directory. " +
+              "Pass the code you wish to run as a string in the 'javascript' parameter. " +
+              "By default, the code will timeout in 5 seconds. You can extend this timeout by setting the 'timeout_seconds' parameter to a higher value in seconds, up to a maximum of 60 seconds. " +
+              "You will get the stdout and stderr output of the code execution, thus please print the output you wish to return using 'console.log' or 'console.error'. " +
+              "The snippet runs with Deno permissions --allow-read=. --allow-write=. --no-prompt --deny-net --deny-env --deny-sys --deny-run --deny-ffi; cwd defaults to the shell_cwd default. " +
+              "Returns {stdout, stderr}; non-zero exit returns an error that includes the stderr. " +
+              "Requires a Deno binary (same resolution as run_javascript_free).",
+            inputSchema: zodToJsonSchema(RunJavascriptArgsSchema) as ToolInput,
+          },
+          {
+            name: "save_memory",
+            description:
+              "Save a specific piece of information or fact to long-term memory. " +
+              "This information will be available in future interactions if memory is enabled. " +
+              "Use this for user preferences, important facts, or context that should persist. " +
+              "Standalone tool (no fork equivalent - NOT an alias): appends '- [ISO timestamp] fact' to the memory file, creating it with a '# Long-Term Memory' header if missing. " +
+              "Memory file path = env MCP_MEMORY_FILE if set, else C:\\Users\\Gerar\\.beledarians-llm-toolbox\\workspace\\memory.md. " +
+              "Unlike Beledarian's there is no enable gate (the fork has no such setting). " +
+              "Returns {success, message} or {error}.",
+            inputSchema: zodToJsonSchema(SaveMemoryArgsSchema) as ToolInput,
           },
         ],
       };
@@ -1949,6 +2067,121 @@ export class FilesystemServer {
               },
               this.allowedDirectories
             );
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "execute_command": {
+            const parsed = ExecuteCommandArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for execute_command: ${parsed.error}`);
+            }
+            const result = await handleExecuteCommand(
+              parsed.data.command,
+              parsed.data.input,
+              parsed.data.timeout_seconds
+            );
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "run_in_terminal": {
+            const parsed = RunInTerminalArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for run_in_terminal: ${parsed.error}`);
+            }
+            const result = await handleRunInTerminal(parsed.data.command);
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "run_test_command": {
+            const parsed = RunTestCommandArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for run_test_command: ${parsed.error}`);
+            }
+            const result = await handleRunTestCommand(parsed.data.command);
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "run_background_command": {
+            const parsed = RunBackgroundCommandArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for run_background_command: ${parsed.error}`);
+            }
+            const result = await handleRunBackgroundCommand(
+              parsed.data.command,
+              parsed.data.name,
+              parsed.data.timeout_hours,
+              parsed.data.cwd
+            );
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "check_background_command": {
+            const parsed = CheckBackgroundCommandArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for check_background_command: ${parsed.error}`);
+            }
+            const result = await handleCheckBackgroundCommand(parsed.data.id);
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "cancel_background_command": {
+            const parsed = CancelBackgroundCommandArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for cancel_background_command: ${parsed.error}`);
+            }
+            const result = await handleCancelBackgroundCommand(parsed.data.id);
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "run_python": {
+            const parsed = RunPythonArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for run_python: ${parsed.error}`);
+            }
+            const result = await handleRunPython(
+              parsed.data.python,
+              parsed.data.timeout_seconds,
+              parsed.data.cwd
+            );
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "run_javascript": {
+            const parsed = RunJavascriptArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for run_javascript: ${parsed.error}`);
+            }
+            const result = await handleRunJavascript(
+              parsed.data.javascript,
+              parsed.data.timeout_seconds
+            );
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "save_memory": {
+            const parsed = SaveMemoryArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for save_memory: ${parsed.error}`);
+            }
+            const result = await handleSaveMemory(parsed.data.fact);
             return {
               content: [{ type: "text", text: result }],
             };
