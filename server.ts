@@ -182,6 +182,8 @@ import {
   handleRunJavascript,
   handleSaveMemory,
 } from "./compat/handler.js";
+import { ConsultSecondaryAgentArgsSchema } from "./subagent/schema.js";
+import { handleConsultSecondaryAgent } from "./subagent/handler.js";
 const ToolInputSchema = ToolSchema.shape.inputSchema;
 type ToolInput = z.infer<typeof ToolInputSchema>;
 
@@ -195,7 +197,7 @@ export class FilesystemServer {
     this.server = new Server(
       {
         name: "secure-filesystem-server",
-        version: "0.2.28",
+        version: "0.2.29",
       },
       {
         capabilities: {
@@ -1034,6 +1036,12 @@ export class FilesystemServer {
               "Unlike Beledarian's there is no enable gate (the fork has no such setting). " +
               "Returns {success, message} or {error}.",
             inputSchema: zodToJsonSchema(SaveMemoryArgsSchema) as ToolInput,
+          },
+          {
+            name: "consult_secondary_agent",
+            description:
+              "Delegate a task to a secondary agent. IMPORTANT: If the task is 'coding' or 'writing files', the secondary agent will AUTOMATICALLY CREATE AND SAVE the files to the disk. You do NOT need to save them yourself. The tool returns a list of generated files. Trust this list.",
+            inputSchema: zodToJsonSchema(ConsultSecondaryAgentArgsSchema) as ToolInput,
           },
         ],
       };
@@ -2182,6 +2190,23 @@ export class FilesystemServer {
               throw new Error(`Invalid arguments for save_memory: ${parsed.error}`);
             }
             const result = await handleSaveMemory(parsed.data.fact);
+            return {
+              content: [{ type: "text", text: result }],
+            };
+          }
+
+          case "consult_secondary_agent": {
+            const parsed = ConsultSecondaryAgentArgsSchema.safeParse(args);
+            if (!parsed.success) {
+              throw new Error(`Invalid arguments for consult_secondary_agent: ${parsed.error}`);
+            }
+            const result = await handleConsultSecondaryAgent(
+              parsed.data.task,
+              parsed.data.agent_role,
+              parsed.data.context,
+              parsed.data.allow_tools,
+              this.allowedDirectories
+            );
             return {
               content: [{ type: "text", text: result }],
             };
