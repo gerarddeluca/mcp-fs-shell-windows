@@ -1032,7 +1032,7 @@ export class FilesystemServer {
               "This information will be available in future interactions if memory is enabled. " +
               "Use this for user preferences, important facts, or context that should persist. " +
               "Standalone tool (no fork equivalent - NOT an alias): appends '- [ISO timestamp] fact' to the memory file, creating it with a '# Long-Term Memory' header if missing. " +
-              "Memory file path = env MCP_MEMORY_FILE if set, else C:\\Users\\Gerar\\.beledarians-llm-toolbox\\workspace\\memory.md. " +
+              "Memory file path = env MCP_MEMORY_FILE if set, else the reference workspace memory.md (C:\\Users\\Gerar\\.beledarians-llm-toolbox\\workspace\\memory.md) if present, else <cwd>/memory.md. " +
               "Unlike Beledarian's there is no enable gate (the fork has no such setting). " +
               "Returns {success, message} or {error}.",
             inputSchema: zodToJsonSchema(SaveMemoryArgsSchema) as ToolInput,

@@ -20,8 +20,10 @@
 //   MCP_SUBAGENT_PROFILES  JSON string {role: personaText} (default: built-ins)
 //   MCP_SUBAGENT_DEBUG     "1" to enable [Sub-Agent] console logging
 //
-// Auth: Bearer token from the LM Studio API token file when present (keyless
-// fallback when missing) — replicates the patched Beledarian behavior.
+// Auth: Bearer token from the API token file (MCP_API_TOKEN_FILE, or the
+// reference machine's overnight token file when unset) when present
+// (keyless fallback when missing) — replicates the patched Beledarian
+// behavior.
 //
 // Allowed-tool mapping (allow_tools=true) -> fork in-process handlers:
 //   read_file                     -> read_files
@@ -121,8 +123,12 @@ function extractLikelyFilePath(text: string): string | null {
 // LM Studio API token file (2026-09-04 auth enablement). When the file exists,
 // requests carry an Authorization: Bearer header; otherwise keyless (works
 // when auth is off). Same file + fallback the patched Beledarian plugin uses.
-const API_TOKEN_FILE =
+// Reference machine's overnight token file (kept for back-compat; on other
+// machines the file is simply absent -> keyless mode).
+const LEGACY_API_TOKEN_FILE =
   "C:\\Users\\Gerar\\.beledarians-llm-toolbox\\workspace\\overnight\\lm_api_token.txt";
+const API_TOKEN_FILE =
+  process.env.MCP_API_TOKEN_FILE?.trim() || LEGACY_API_TOKEN_FILE;
 
 // Built-in persona profiles:
 //  - 'summarizer'/'coder': the reference's config default (subAgentProfiles,

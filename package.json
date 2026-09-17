@@ -1,8 +1,19 @@
 {
   "name": "mcp-fs-shell-windows",
   "version": "0.2.29",
-  "description": "MCP filesystem server: batched file tools + standalone Windows shell tools (extended fork)",
+  "description": "MCP server with 82 tools: batched filesystem access, standalone Windows shell, and a Beledarian-parity tool set (git, GitHub, system, document, database, web, RAG, browser, sub-agent). Extended fork of mcp-filesystem-extended.",
   "license": "MIT",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "filesystem",
+    "windows",
+    "shell",
+    "lm-studio",
+    "claude",
+    "deno",
+    "puppeteer"
+  ],
   "author": "Gerard DeLuca",
   "repository": {
     "type": "git",
@@ -24,7 +35,7 @@
   ],
   "scripts": {
     "build": "tsc && shx chmod +x dist/*.js",
-    "test": "node --test tests/",
+    "test": "node --test tests/*.test.js",
     "prepare": "npm run build",
     "watch": "tsc --watch"
   },

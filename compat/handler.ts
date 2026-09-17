@@ -17,6 +17,7 @@
 //     reference passed only NO_COLOR, which strips PATH; spreading process.env
 //     keeps the confined Deno spawn robust and matches run_javascript_free).
 import fsp from "fs/promises";
+import fs from "fs";
 import nodePath from "path";
 import crypto from "crypto";
 import {
@@ -256,14 +257,19 @@ export async function handleRunJavascript(
 // the enable gate — the fork has no such setting).
 //
 // Appends "- [ISO timestamp] fact" to the memory file. Memory file path =
-// env MCP_MEMORY_FILE if set, else the Beledarian workspace memory.md. If the
-// file is missing it is created with a '# Long-Term Memory' header.
+// env MCP_MEMORY_FILE if set, else the reference machine's workspace
+// memory.md if present, else <cwd>/memory.md. If the file is missing it is
+// created with a '# Long-Term Memory' header.
 // Returns {success, message} on success, {error} on failure.
 // ---------------------------------------------------------------------------
 export function resolveMemoryFile(): string {
   const env = process.env.MCP_MEMORY_FILE;
   if (env && env.trim()) return env;
-  return "C:\\Users\\Gerar\\.beledarians-llm-toolbox\\workspace\\memory.md";
+  // Reference machine's workspace memory.md (kept for back-compat); on other
+  // machines the path does not exist, so fall back to the server's CWD.
+  const legacy = "C:\\Users\\Gerar\\.beledarians-llm-toolbox\\workspace\\memory.md";
+  if (fs.existsSync(legacy)) return legacy;
+  return nodePath.join(process.cwd(), "memory.md");
 }
 
 export async function handleSaveMemory(fact: string): Promise<string> {

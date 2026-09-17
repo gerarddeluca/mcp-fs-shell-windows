@@ -6,21 +6,37 @@
 // client; this fork runs on plain Node, so embedding is a fetch against
 // LM Studio's OpenAI-compatible API: POST http://127.0.0.1:1234/v1/embeddings
 // with JSON { model, input: [strings] } and (when a token is available)
-// Authorization: Bearer <token>. The token is read from the overnight
-// pipeline's token file; if that file is missing or empty the request is
-// sent keyless. All thresholds, chunking, and top-N behavior are identical
+// Authorization: Bearer <token>. The token is read from MCP_API_TOKEN_FILE
+// (or, when unset, the reference machine's overnight pipeline token file);
+// if that file is missing or empty the request is sent keyless. The endpoint
+// is MCP_RAG_EMBED_URL when set. All thresholds, chunking, and top-N
+// behavior are identical
 // to the reference.
 import fs from "fs";
 
-const EMBEDDINGS_URL = "http://127.0.0.1:1234/v1/embeddings";
-const TOKEN_FILE =
+const DEFAULT_EMBEDDINGS_URL = "http://127.0.0.1:1234/v1/embeddings";
+// Reference machine's overnight pipeline token file (kept for back-compat;
+// on other machines the file is simply absent -> keyless request).
+const LEGACY_TOKEN_FILE =
   "C:/Users/Gerar/.beledarians-llm-toolbox/workspace/overnight/lm_api_token.txt";
+
+// Env overrides (v0.2.29 publish portability). When unset, behavior on the
+// reference machine is unchanged.
+function getEmbeddingsUrl(): string {
+  const o = process.env.MCP_RAG_EMBED_URL;
+  return o && o.trim() ? o.trim() : DEFAULT_EMBEDDINGS_URL;
+}
+
+function getTokenFile(): string {
+  const o = process.env.MCP_API_TOKEN_FILE;
+  return o && o.trim() ? o.trim() : LEGACY_TOKEN_FILE;
+}
 const DEFAULT_EMBED_MODEL = "text-embedding-nomic-embed-text-v1.5";
 
 // Read the API token fresh on every call (small file; rotation stays live).
 function readApiKey(): string | null {
   try {
-    const token = fs.readFileSync(TOKEN_FILE, "utf-8").trim();
+    const token = fs.readFileSync(getTokenFile(), "utf-8").trim();
     return token.length > 0 ? token : null;
   } catch {
     return null;
@@ -50,7 +66,7 @@ export async function embedStrings(strings: string[]): Promise<number[][]> {
       const token = readApiKey();
       if (token) headers["Authorization"] = `Bearer ${token}`;
 
-      const res = await fetch(EMBEDDINGS_URL, {
+      const res = await fetch(getEmbeddingsUrl(), {
         method: "POST",
         headers,
         body: JSON.stringify({ model: getEmbedModel(), input: strings }),
